@@ -1,6 +1,8 @@
 # HARMONI — Edge-AI Distributed Fleet Coordination for AMRs (Vercel Edition)
 ### SIH26123 Browser-Based AMR Digital Twin
 
+For full technical and architectural details, see `HARMONI_Technologies_Explained.md`.
+
 ## Overview
 This repository contains a **complete, interactive browser-based simulation of the HARMONI system** built with **Next.js, TypeScript, and Web Workers**, designed for zero-config deployment on **Vercel**.
 
@@ -110,3 +112,4 @@ cd harmoni-vercel
 vercel
 ```
 Or connect this Git repository directly to Vercel via GitHub/GitLab. The project requires zero environment variables and works out of the box.
+
