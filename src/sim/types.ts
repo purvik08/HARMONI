@@ -24,6 +24,8 @@ export interface RobotState {
   waiting_on: number | null;
   /** Heading in radians, computed from last move direction */
   heading?: number;
+  /** v2: number of P2P broadcasts this robot has made */
+  comm_events?: number;
 }
 
 /** A single simulation event */
@@ -119,6 +121,9 @@ export interface SimLog {
     tasks_completed: number;
     avg_task_completion_ticks: number | null;
     final_tick: number;
+    comm_events?: number; // v2
+    comm_events_per_task?: number | null; // v2
+    deadlock_resolution_ticks?: number | null; // v2
   };
 }
 

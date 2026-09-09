@@ -1,130 +1,94 @@
 /**
  * A* path planning over the Warehouse grid.
- * Used for local autonomy (each robot plans its own path) and for
- * replanning around blocked aisles or released reservations.
- *
- * This is the ONLY planner used for motion — it is deterministic, not
- * AI-based, per the safety principle that AI must never be responsible
- * for safety-critical navigation.
- *
- * Direct port of astar.py — identical logic, binary min-heap via array.
+ * v2: uses wh.nodeCost() for rack-weighted traversal.
  */
 
 import { Warehouse } from './warehouse';
 import type { Pos } from './types';
 
-/** Simple binary min-heap for A* open set */
-class MinHeap<T extends { priority: number }> {
-  private data: T[] = [];
+/** Min-heap node: [f, g, posKey, parentKey | null] */
+type HeapNode = [number, number, string, string | null];
 
-  push(item: T): void {
-    this.data.push(item);
-    this._bubbleUp(this.data.length - 1);
+function heapPush(heap: HeapNode[], node: HeapNode): void {
+  heap.push(node);
+  let i = heap.length - 1;
+  while (i > 0) {
+    const parent = (i - 1) >> 1;
+    if (heap[parent][0] <= heap[i][0]) break;
+    [heap[parent], heap[i]] = [heap[i], heap[parent]];
+    i = parent;
   }
+}
 
-  pop(): T | undefined {
-    if (this.data.length === 0) return undefined;
-    const top = this.data[0];
-    const last = this.data.pop()!;
-    if (this.data.length > 0) {
-      this.data[0] = last;
-      this._siftDown(0);
-    }
-    return top;
-  }
-
-  get size(): number { return this.data.length; }
-
-  private _bubbleUp(i: number): void {
-    while (i > 0) {
-      const parent = Math.floor((i - 1) / 2);
-      if (this.data[parent].priority <= this.data[i].priority) break;
-      [this.data[parent], this.data[i]] = [this.data[i], this.data[parent]];
-      i = parent;
-    }
-  }
-
-  private _siftDown(i: number): void {
-    const n = this.data.length;
+function heapPop(heap: HeapNode[]): HeapNode {
+  const top = heap[0];
+  const last = heap.pop()!;
+  if (heap.length > 0) {
+    heap[0] = last;
+    let i = 0;
     while (true) {
       let smallest = i;
-      const l = 2 * i + 1, r = 2 * i + 2;
-      if (l < n && this.data[l].priority < this.data[smallest].priority) smallest = l;
-      if (r < n && this.data[r].priority < this.data[smallest].priority) smallest = r;
+      const l = 2*i+1, r = 2*i+2;
+      if (l < heap.length && heap[l][0] < heap[smallest][0]) smallest = l;
+      if (r < heap.length && heap[r][0] < heap[smallest][0]) smallest = r;
       if (smallest === i) break;
-      [this.data[smallest], this.data[i]] = [this.data[i], this.data[smallest]];
+      [heap[i], heap[smallest]] = [heap[smallest], heap[i]];
       i = smallest;
     }
   }
+  return top;
 }
 
-interface HeapNode {
-  priority: number; // f = g + h
-  g: number;
-  pos: Pos;
-  parent: Pos | null;
-}
+export function astar(wh: Warehouse, start: Pos, goal: Pos, avoidEdges?: Set<string>): Pos[] | null {
+  const avoidSet = avoidEdges ?? new Set<string>();
+  const startKey = Warehouse.posKey(start);
+  const goalKey = Warehouse.posKey(goal);
+  if (startKey === goalKey) return [start];
 
-/**
- * Returns the shortest path from start to goal (inclusive), or null if
- * no path exists. `avoidEdges` is a Set of edgeKey strings to treat as
- * impassable (used for local obstacle knowledge).
- */
-export function astar(
-  wh: Warehouse,
-  start: Pos,
-  goal: Pos,
-  avoidEdges: Set<string> = new Set()
-): Pos[] | null {
-  if (Warehouse.posKey(start) === Warehouse.posKey(goal)) return [start];
-
-  const heap = new MinHeap<HeapNode>();
-  heap.push({ priority: Warehouse.dist(start, goal), g: 0, pos: start, parent: null });
-
-  const cameFrom = new Map<string, Pos | null>();
-  const gScore = new Map<string, number>();
+  const heap: HeapNode[] = [];
+  const gScore = new Map<string, number>([[startKey, 0]]);
+  const cameFrom = new Map<string, string | null>([[startKey, null]]);
   const visited = new Set<string>();
 
-  gScore.set(Warehouse.posKey(start), 0);
+  heapPush(heap, [Warehouse.dist(start, goal), 0, startKey, null]);
 
-  while (heap.size > 0) {
-    const { g, pos, parent } = heap.pop()!;
-    const posKey = Warehouse.posKey(pos);
+  while (heap.length > 0) {
+    const [, g, curKey] = heapPop(heap);
+    if (visited.has(curKey)) continue;
+    visited.add(curKey);
 
-    if (visited.has(posKey)) continue;
-    visited.add(posKey);
-    cameFrom.set(posKey, parent);
-
-    if (posKey === Warehouse.posKey(goal)) {
-      // reconstruct path
+    if (curKey === goalKey) {
+      // Reconstruct
       const path: Pos[] = [];
-      let cur: string | null = posKey;
-      while (cur !== null) {
-        path.push(Warehouse.keyToPos(cur));
-        const prev = cameFrom.get(cur);
-        cur = prev !== undefined && prev !== null ? Warehouse.posKey(prev) : null;
+      let k: string | null = goalKey;
+      while (k !== null) {
+        path.push(Warehouse.keyToPos(k));
+        k = cameFrom.get(k) ?? null;
       }
-      path.reverse();
-      return path;
+      return path.reverse();
     }
 
-    for (const nb of wh.neighbors(pos)) {
-      const edgeKey = Warehouse.edgeKey(pos, nb);
-      if (avoidEdges.has(edgeKey)) continue;
-
+    const cur = Warehouse.keyToPos(curKey);
+    for (const nb of wh.neighbors(cur)) {
       const nbKey = Warehouse.posKey(nb);
-      const tentative = g + 1;
+      const ek = Warehouse.edgeKey(cur, nb);
+      if (avoidSet.has(ek)) continue;
+      // v2: use nodeCost for destination
+      const stepCost = wh.nodeCost(nb);
+      const tentative = g + stepCost;
       if (tentative < (gScore.get(nbKey) ?? Infinity)) {
         gScore.set(nbKey, tentative);
-        heap.push({
-          priority: tentative + Warehouse.dist(nb, goal),
-          g: tentative,
-          pos: nb,
-          parent: pos,
-        });
+        cameFrom.set(nbKey, curKey);
+        heapPush(heap, [tentative + Warehouse.dist(nb, goal), tentative, nbKey, curKey]);
       }
     }
   }
+  return null;
+}
 
-  return null; // no path found
+/** Return A* cost (not hop count) — used for task bidding */
+export function astarDist(wh: Warehouse, start: Pos, goal: Pos): number {
+  const path = astar(wh, start, goal);
+  if (!path) return Infinity;
+  return path.slice(1).reduce((sum, n) => sum + wh.nodeCost(n), 0);
 }

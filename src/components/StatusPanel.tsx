@@ -112,6 +112,44 @@ export function StatusPanel({ frame, tick, mode }: StatusPanelProps) {
         </div>
         <div className="text-[11px] opacity-80 font-sans">{opMode.desc}</div>
       </div>
+
+      {/* v2: HARMONI vs Baseline indicator rows */}
+      <div className="grid grid-cols-2 gap-2">
+        {/* Deadlock Recovery */}
+        <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
+          <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Deadlock Recovery</div>
+          {mode === 'harmoni' ? (
+            <div className="text-[11px] font-bold text-[#2ecc71]">ACTIVE ✓ (Cycle Escape)</div>
+          ) : (
+            <div className="text-[11px] font-bold text-[#e3595a]">NONE ✗ (Stalls Forever)</div>
+          )}
+        </div>
+        {/* Comm Strategy */}
+        <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
+          <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Comm Strategy</div>
+          {mode === 'harmoni' ? (
+            <div className="text-[11px] font-bold text-[#4fc6c0]">SELECTIVE (Horizon 4)</div>
+          ) : (
+            <div className="text-[11px] font-bold text-[#5a6660]">BROADCAST (Always-On)</div>
+          )}
+        </div>
+        {/* Local Autonomy */}
+        <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
+          <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Local Autonomy</div>
+          {mode === 'harmoni' ? (
+            <div className="text-[11px] font-bold text-[#4fc6c0]">ACTIVE (Edge Nodes)</div>
+          ) : (
+            <div className="text-[11px] font-bold text-[#5a6660]">NONE (Central Ctrl)</div>
+          )}
+        </div>
+        {/* Edge Infrastructure */}
+        <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
+          <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Edge Infrastructure</div>
+          <div className={`text-[11px] font-bold ${infraOnline ? 'text-[#2ecc71]' : 'text-[#e3595a]'}`}>
+            {infraOnline ? 'ONLINE ✓' : 'OFFLINE ✗'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

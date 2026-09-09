@@ -154,6 +154,75 @@ export function SimCanvas({
       }
     }
 
+    // ── v2: Zone fills ─────────────────────────────────────────────────────
+    if (width >= 20 && height >= 16) {
+      const cw = cellW, ch = cellH;
+      const zoneData: Array<{ nodes: Array<[number,number]>; fill: string; stroke?: string }> = [
+        { nodes: [[1,1],[2,1],[3,1],[1,2],[2,2],[3,2]], fill: 'rgba(46,204,113,0.13)', stroke: 'rgba(46,204,113,0.35)' },   // pickup
+        { nodes: [[24,1],[25,1],[26,1],[24,2],[25,2],[26,2]], fill: 'rgba(52,152,219,0.13)', stroke: 'rgba(52,152,219,0.35)' }, // dropoff
+      ];
+      // racks
+      for (let x = 6; x < 22; x++) for (let y = 4; y < 8; y++) {
+        const [px,py] = xy([x,y]);
+        ctx.fillStyle = 'rgba(139,105,20,0.16)';
+        ctx.fillRect(px - cw*0.48, py - ch*0.48, cw*0.96, ch*0.96);
+      }
+      for (let x = 6; x < 22; x++) for (let y = 12; y < 16; y++) {
+        const [px,py] = xy([x,y]);
+        ctx.fillStyle = 'rgba(139,105,20,0.16)';
+        ctx.fillRect(px - cw*0.48, py - ch*0.48, cw*0.96, ch*0.96);
+      }
+      // home nodes
+      for (const [hx,hy] of [[0,0],[0,height-1],[width-1,0],[width-1,height-1],[Math.floor(width/2),0],[Math.floor(width/2),height-1]] as Array<[number,number]>) {
+        const [px,py] = xy([hx,hy]);
+        ctx.fillStyle = 'rgba(155,89,182,0.2)';
+        ctx.beginPath(); ctx.arc(px, py, Math.max(4, minCell * 0.45), 0, Math.PI*2); ctx.fill();
+      }
+      // zone fill rects for pickup/dropoff
+      for (const zone of zoneData) {
+        for (const [nx,ny] of zone.nodes) {
+          const [px,py] = xy([nx,ny]);
+          ctx.fillStyle = zone.fill;
+          ctx.fillRect(px - cw*0.48, py - ch*0.48, cw*0.96, ch*0.96);
+          if (zone.stroke) {
+            ctx.strokeStyle = zone.stroke; ctx.lineWidth = 0.8;
+            ctx.strokeRect(px - cw*0.48, py - ch*0.48, cw*0.96, ch*0.96);
+          }
+        }
+      }
+      // obstacles — dark fill + X glyph
+      for (const [ox,oy] of [[10,10],[10,11],[11,10],[11,11],[17,8],[17,9],[18,8],[18,9],[5,14],[5,15],[6,14],[6,15]] as Array<[number,number]>) {
+        const [px,py] = xy([ox,oy]);
+        ctx.fillStyle = '#1a0f0f';
+        ctx.fillRect(px - cw*0.48, py - ch*0.48, cw*0.96, ch*0.96);
+        ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 1.5;
+        const m = Math.min(cw,ch)*0.35;
+        ctx.beginPath(); ctx.moveTo(px-m,py-m); ctx.lineTo(px+m,py+m); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px+m,py-m); ctx.lineTo(px-m,py+m); ctx.stroke();
+      }
+      // edge nodes — pulsing ring
+      const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 400);
+      for (const [ex,ey] of [[3,10],[13,10],[24,10]] as Array<[number,number]>) {
+        const [px,py] = xy([ex,ey]);
+        ctx.strokeStyle = 'rgba(79,198,192,0.7)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(px, py, minCell*0.38*pulse, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = 'rgba(79,198,192,0.35)';
+        ctx.beginPath(); ctx.arc(px, py, 2, 0, Math.PI*2); ctx.fill();
+      }
+      // Zone labels
+      ctx.font = `bold ${Math.max(6, Math.min(9, minCell*0.5))}px monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const zoneLabels: Array<[number,number,string,string]> = [
+        [2,1,'PICKUP','#2ecc71'], [25,1,'DROPOFF','#3498db'],
+        [13,5,'RACK A','#8B6914'], [13,13,'RACK B','#8B6914'],
+        [3,10,'EDGE','#4fc6c0'], [13,10,'EDGE','#4fc6c0'], [24,10,'EDGE','#4fc6c0'],
+      ];
+      for (const [lx,ly,label,color] of zoneLabels) {
+        const [px,py] = xy([lx,ly]);
+        ctx.fillStyle = color; ctx.fillText(label, px, py);
+      }
+    }
+
     // Intersections highlighting (degree >= 3)
     const iHalo = minCell * 0.38;
     for (let x = 0; x < effW; x++) {
@@ -165,12 +234,12 @@ export function SimCanvas({
         if (y + 1 < effH) degree++;
         if (degree >= 3) {
           const [px, py] = xy([x, y]);
-          ctx.fillStyle = 'rgba(79, 198, 192, 0.06)';
+          ctx.fillStyle = 'rgba(79, 198, 192, 0.04)';
           ctx.beginPath();
           ctx.arc(px, py, iHalo, 0, Math.PI * 2);
           ctx.fill();
           ctx.strokeStyle = '#273c35';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 0.8;
           ctx.stroke();
         }
       }
@@ -262,25 +331,37 @@ export function SimCanvas({
       }
     }
 
-    // Communication links between robots within range (if P2P is online)
+    // v2: Selective comm flash — only robots that recently broadcast (comm_events > 0)
+    // show a brief cyan ring pulse; baseline mode shows all links always-on (greyed)
     if (frame.p2p_online) {
-      ctx.strokeStyle = 'rgba(79, 198, 192, 0.22)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 6]);
-      for (let i = 0; i < frame.robots.length; i++) {
-        for (let j = i + 1; j < frame.robots.length; j++) {
-          const r1 = frame.robots[i];
-          const r2 = frame.robots[j];
-          if (!r1.active || !r2.active) continue;
-          const [x1, y1] = xy(r1.pos);
-          const [x2, y2] = xy(r2.pos);
-          ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.stroke();
+      const isBaseline = !frame.infra_online || frame.robots.every(r => (r.comm_events ?? 0) > frame.tick * 0.8);
+      if (isBaseline) {
+        // Baseline: always-on greyed comm links
+        ctx.strokeStyle = 'rgba(90,102,96,0.18)';
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 6]);
+        for (let i = 0; i < frame.robots.length; i++) {
+          for (let j = i + 1; j < frame.robots.length; j++) {
+            const r1 = frame.robots[i], r2 = frame.robots[j];
+            if (!r1.active || !r2.active) continue;
+            const [x1, y1] = xy(r1.pos), [x2, y2] = xy(r2.pos);
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          }
+        }
+        ctx.setLineDash([]);
+      } else {
+        // HARMONI: brief cyan flash ring for robots that just broadcast
+        for (const r of frame.robots) {
+          if (!r.active || !r.comm_events) continue;
+          if (Math.random() < 0.2) { // stochastic flash at current tick
+            const [px, py] = xy(r.pos);
+            ctx.strokeStyle = 'rgba(79,198,192,0.55)';
+            ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6;
+            ctx.beginPath(); ctx.arc(px, py, robotRadius * 1.6, 0, Math.PI*2); ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
         }
       }
-      ctx.setLineDash([]);
     } else {
       // P2P offline banner
       ctx.fillStyle = 'rgba(227, 89, 90, 0.12)';
@@ -322,15 +403,39 @@ export function SimCanvas({
           ctx.arc(cx, cy, robotRadius * 1.6, 0, Math.PI * 2);
           ctx.stroke();
         }
-        if (ev.type === 'deadlock_detected') {
-          ctx.strokeStyle = '#e3595a';
+        if (ev.type === 'deadlock_detected' && ev.cycle && ev.cycle.length >= 2) {
+          const robotMap = new Map(frame.robots.map(r => [r.id, r]));
+          const isResolved = ev.resolved !== false; // HARMONI resolves; baseline resolved===false
+          ctx.strokeStyle = isResolved ? 'rgba(46,204,113,0.7)' : 'rgba(231,76,60,0.85)';
           ctx.lineWidth = 2.5;
-          for (const r of frame.robots) {
-            if (ev.cycle?.includes(r.id)) {
-              const [px, py] = xy(r.pos);
-              ctx.beginPath();
-              ctx.arc(px, py, robotRadius * 1.6, 0, Math.PI * 2);
-              ctx.stroke();
+          ctx.setLineDash([5, 4]);
+          // Draw arc connecting cycle robots
+          for (let ci = 0; ci < ev.cycle.length; ci++) {
+            const ra = robotMap.get(ev.cycle[ci]);
+            const rb = robotMap.get(ev.cycle[(ci + 1) % ev.cycle.length]);
+            if (!ra || !rb) continue;
+            const [ax, ay] = xy(ra.pos), [bx, by] = xy(rb.pos);
+            ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+          }
+          ctx.setLineDash([]);
+          // Highlight each robot in cycle
+          for (const rid of ev.cycle) {
+            const r = robotMap.get(rid);
+            if (!r) continue;
+            const [rpx, rpy] = xy(r.pos);
+            ctx.strokeStyle = isResolved ? 'rgba(46,204,113,0.6)' : '#e3595a';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath(); ctx.arc(rpx, rpy, robotRadius * 1.7, 0, Math.PI*2); ctx.stroke();
+          }
+          // Label
+          if (ev.cycle.length > 0) {
+            const r0 = robotMap.get(ev.cycle[0]);
+            if (r0) {
+              const [lpx, lpy] = xy(r0.pos);
+              ctx.font = `bold 8px monospace`;
+              ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+              ctx.fillStyle = isResolved ? '#2ecc71' : '#e74c3c';
+              ctx.fillText(isResolved ? 'RESOLVED' : 'STALLED', lpx, lpy - robotRadius - 10);
             }
           }
         }

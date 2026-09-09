@@ -1,14 +1,6 @@
 /**
  * Distributed task allocation via lease-based auction.
- *
- * There is no central dispatcher deciding who does what. Tasks sit in a
- * shared pool (visible to all robots via the bus). Idle robots bid with
- * their own path-distance cost; lowest bid wins the lease (deterministic
- * tie-break on robot_id). A robot holding a lease must implicitly renew
- * it every tick by being alive and progressing; if it goes offline/fails,
- * its lease is not renewed and expires, returning the task to the pool.
- *
- * Direct port of tasks.py — identical logic.
+ * v2: adds EdgeNode — announces tasks on P2P bus (no central assignment).
  */
 
 import type { Pos, SimEvent, TaskSnapshot } from './types';
@@ -54,7 +46,7 @@ export class Task {
 }
 
 export class TaskPool {
-  static readonly LEASE_TIMEOUT = 4; // ticks without renewal before a lease expires
+  static readonly LEASE_TIMEOUT = 4;
 
   private bus: NetworkBus;
   private logEvents: SimEvent[];
@@ -69,8 +61,7 @@ export class TaskPool {
   addTask(pickup: Pos, dropoff: Pos, tick: number): Task {
     const t = new Task(this.nextId++, pickup, dropoff, tick);
     this.tasks.set(t.task_id, t);
-    const ev: SimEvent = { tick, type: 'task_assigned', task_id: t.task_id };
-    this.bus.publishTaskEvent({ ...ev, type: 'task_assigned' });
+    this.bus.publishTaskEvent({ tick, type: 'task_assigned', task_id: t.task_id });
     return t;
   }
 
@@ -80,9 +71,7 @@ export class TaskPool {
 
   renewLease(taskId: number, tick: number): void {
     const t = this.tasks.get(taskId);
-    if (t && t.status === TaskStatus.ASSIGNED) {
-      t.lease_expiry = tick + TaskPool.LEASE_TIMEOUT;
-    }
+    if (t && t.status === TaskStatus.ASSIGNED) t.lease_expiry = tick + TaskPool.LEASE_TIMEOUT;
   }
 
   expireStaleLeases(tick: number): void {
@@ -92,41 +81,27 @@ export class TaskPool {
         t.status = TaskStatus.PENDING;
         t.holder = null;
         t.lease_expiry = null;
-        this.bus.publishTaskEvent({
-          tick, type: 'lease_expired', task_id: t.task_id, previous_holder: oldHolder ?? undefined,
-        });
-        this.logEvents.push({
-          tick, type: 'task_reassign_pending', task_id: t.task_id, previous_holder: oldHolder ?? undefined,
-        });
+        this.bus.publishTaskEvent({ tick, type: 'lease_expired', task_id: t.task_id, previous_holder: oldHolder ?? undefined });
+        this.logEvents.push({ tick, type: 'task_reassign_pending', task_id: t.task_id, previous_holder: oldHolder ?? undefined });
       }
     }
   }
 
-  /**
-   * idle_robots: array of [robot_id, pos, dist_fn]
-   * Returns the awarded task, or null if nothing to award.
-   */
-  runAuction(
-    tick: number,
-    idleRobots: Array<[number, Pos, (a: Pos, b: Pos) => number]>
-  ): Task | null {
+  runAuction(tick: number, idleRobots: Array<[number, Pos, (a: Pos, b: Pos) => number]>): Task | null {
     for (const t of this.pendingTasks()) {
-      const bids: Array<[number, number]> = []; // [cost, robot_id]
+      const bids: Array<[number, number]> = [];
       for (const [robotId, pos, distFn] of idleRobots) {
-        const cost = distFn(pos, t.pickup);
-        bids.push([cost, robotId]);
+        bids.push([distFn(pos, t.pickup), robotId]);
       }
       if (bids.length === 0) continue;
-      bids.sort((a, b) => a[0] - b[0] || a[1] - b[1]); // stable tie-break on id
+      bids.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
       const [winnerCost, winnerId] = bids[0];
       t.status = TaskStatus.ASSIGNED;
       t.holder = winnerId;
       t.lease_expiry = tick + TaskPool.LEASE_TIMEOUT;
-      this.bus.publishTaskEvent({
-        tick, type: 'task_assigned', task_id: t.task_id, holder: winnerId, bid: winnerCost,
-      });
+      this.bus.publishTaskEvent({ tick, type: 'task_assigned', task_id: t.task_id, holder: winnerId, bid: winnerCost });
       this.logEvents.push({ tick, type: 'task_assigned', task_id: t.task_id, holder: winnerId });
-      return t; // one award per tick
+      return t;
     }
     return null;
   }
@@ -143,8 +118,39 @@ export class TaskPool {
     return Array.from(this.tasks.values()).map(t => t.toSnapshot());
   }
 
-  reset(): void {
-    this.tasks.clear();
-    this.nextId = 0;
+  reset(): void { this.tasks.clear(); this.nextId = 0; }
+}
+
+/**
+ * v2: EdgeNode — logical processing node at a fixed grid position.
+ * Announces pending tasks on the P2P bus so robots can bid.
+ * Does NOT assign — winner selection is decentralized.
+ */
+export class EdgeNode {
+  readonly nodeId: number;
+  readonly pos: Pos;
+  private bus: NetworkBus;
+  private taskPool: TaskPool;
+  private lastAnnounced: Map<number, number> = new Map(); // task_id -> tick
+
+  constructor(nodeId: number, pos: Pos, bus: NetworkBus, taskPool: TaskPool) {
+    this.nodeId = nodeId;
+    this.pos = pos;
+    this.bus = bus;
+    this.taskPool = taskPool;
+  }
+
+  announce(tick: number): void {
+    for (const task of this.taskPool.pendingTasks()) {
+      const last = this.lastAnnounced.get(task.task_id) ?? -999;
+      if (tick - last >= 3) {
+        this.bus.publishTaskEvent({
+          tick,
+          type: 'task_assigned', // reuse event type; payload marks it as announcement
+          task_id: task.task_id,
+        });
+        this.lastAnnounced.set(task.task_id, tick);
+      }
+    }
   }
 }

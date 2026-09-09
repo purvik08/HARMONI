@@ -10,10 +10,10 @@
  * Direct port of simulator.py with interactive extensions.
  */
 
-import { Warehouse } from './warehouse';
+import { Warehouse, HOME_NODES } from './warehouse';
 import { NetworkBus } from './network';
 import { ReservationTable, type ReservationMode } from './reservation';
-import { TaskPool, Task } from './tasks';
+import { TaskPool, Task, EdgeNode } from './tasks';
 import { Robot } from './robot';
 import { detectCycle, chooseRecoveryRobot } from './deadlock';
 import type { Pos, SimEvent, SimFrame, SimMetrics, SimLog, TaskSnapshot } from './types';
@@ -51,11 +51,13 @@ export class Simulator {
   private rng: SeededRng;
   scenarioName: string;
   robots: Map<number, Robot>;
+  edgeNodes: EdgeNode[]; // v2
   tick: number;
   frames: SimFrame[];
   metrics: SimMetrics;
   private scheduledActions: Array<{ tick: number; fn: () => void; label?: string }>;
   private nextRobotId: number;
+  private _deadlockFirstDetectedTick: number | null = null; // v2
 
   constructor(config: SimConfig) {
     this.mode = config.mode;
@@ -79,10 +81,20 @@ export class Simulator {
 
     const starts = this.wh.pickStartPositions(config.nRobots);
     for (let i = 0; i < config.nRobots; i++) {
-      const r = new Robot(i, starts[i], this.wh, this.bus, this.res, this.logEvents);
+      const r = new Robot(i, starts[i], this.wh, this.bus, this.res, this.logEvents, config.mode);
       this.robots.set(i, r);
     }
     this.nextRobotId = config.nRobots;
+
+    // v2: create edge nodes from warehouse zones
+    this.edgeNodes = [];
+    if (!this.wh.isCustom) {
+      let idx = 0;
+      for (const key of this.wh.zones.edge_nodes) {
+        const pos = Warehouse.keyToPos(key);
+        this.edgeNodes.push(new EdgeNode(idx++, pos, this.bus, this.tasks));
+      }
+    }
   }
 
   schedule(tick: number, fn: () => void, label?: string): void {
@@ -91,13 +103,20 @@ export class Simulator {
 
   seedTasks(nTasks: number, extraSeedShift = 0): void {
     const rng = new SeededRng(1000 + extraSeedShift);
-    const nodes = this.wh.nodes;
+    // v2: prefer zone nodes for pickup/dropoff
+    const pickupNodes = this.wh.zones.pickup.size > 0
+      ? Array.from(this.wh.zones.pickup).map(k => WH.keyToPos(k))
+      : this.wh.nodes;
+    const dropoffNodes = this.wh.zones.dropoff.size > 0
+      ? Array.from(this.wh.zones.dropoff).map(k => WH.keyToPos(k))
+      : this.wh.nodes;
+    const allNodes = this.wh.nodes;
     for (let i = 0; i < nTasks; i++) {
-      let pickup = rng.choice(nodes);
-      let dropoff = rng.choice(nodes);
+      let pickup = rng.choice(pickupNodes);
+      let dropoff = rng.choice(dropoffNodes);
       let tries = 0;
       while (WH.posKey(dropoff) === WH.posKey(pickup) && tries < 10) {
-        dropoff = rng.choice(nodes);
+        dropoff = rng.choice(allNodes);
         tries++;
       }
       this.tasks.addTask(pickup, dropoff, this.tick);
@@ -155,12 +174,17 @@ export class Simulator {
   _tickOnce(): void {
     const t = this.tick;
 
-    // 1. sense obstacle events + publish state/intent
+    // 1. sense obstacle events + publish state/intent (selective in harmoni mode)
     for (const r of this.robots.values()) {
       if (r.active) {
         r.senseAndSync(t);
         r.publishState(t);
       }
+    }
+
+    // 1b. v2: edge nodes announce pending tasks on P2P bus
+    for (const en of this.edgeNodes) {
+      en.announce(t);
     }
 
     // 2. task lease housekeeping + auction
@@ -264,6 +288,14 @@ export class Simulator {
     if (!cycle) return;
 
     this.metrics.deadlocks_detected++;
+    if (this._deadlockFirstDetectedTick === null) this._deadlockFirstDetectedTick = t; // v2
+
+    // v2: baseline mode — no recovery, log as stalled
+    if (this.mode === 'baseline') {
+      this.logEvents.push({ tick: t, type: 'deadlock_detected', cycle, recovery_robot: undefined, resolved: false, escape_node: null });
+      return;
+    }
+
     const recoveryId = chooseRecoveryRobot(cycle);
     const robot = this.robots.get(recoveryId);
     if (!robot) return;
@@ -349,6 +381,7 @@ export class Simulator {
         active: r.active,
         waiting_on: r.waiting_on,
         heading: r.heading,
+        comm_events: r.stats.comm_events, // v2
       });
     }
     this.frames.push(frame);
@@ -356,6 +389,8 @@ export class Simulator {
 
   exportLog(): SimLog {
     const times = this.metrics.task_completion_times;
+    const commEvents = Array.from(this.robots.values()).reduce((s, r) => s + r.stats.comm_events, 0);
+    const tasksDone = this.metrics.tasks_completed;
     return {
       scenario: this.scenarioName,
       mode: this.mode,
@@ -374,9 +409,12 @@ export class Simulator {
         total_wait_ticks: this.metrics.total_wait_ticks,
         total_move_ticks: this.metrics.total_move_ticks,
         replans: this.metrics.replans,
-        tasks_completed: this.metrics.tasks_completed,
+        tasks_completed: tasksDone,
         avg_task_completion_ticks: times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : null,
         final_tick: this.tick,
+        comm_events: commEvents, // v2
+        comm_events_per_task: tasksDone > 0 ? Math.round((commEvents / tasksDone) * 100) / 100 : null, // v2
+        deadlock_resolution_ticks: this._deadlockFirstDetectedTick !== null ? this.tick - this._deadlockFirstDetectedTick : null, // v2
       },
     };
   }
