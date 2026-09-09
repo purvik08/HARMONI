@@ -1,16 +1,25 @@
 /**
- * Web Worker for running the HARMONI simulation continuously
- * off the main UI thread.
+ * Web Worker for running parallel HARMONI and Baseline simulations
+ * continuously off the main UI thread.
  */
 
 import { Simulator } from '../sim/simulator';
 import { runBenchmark } from '../sim/benchmark';
 import { ALL_SCENARIOS } from '../sim/scenarios';
-import type { WorkerCommand, WorkerMessage, SimInitConfig, BenchmarkConfig } from '../sim/types';
+import type {
+  WorkerCommand,
+  WorkerMessage,
+  SimInitConfig,
+  BenchmarkConfig,
+  ParallelSimFrame,
+  ParallelSimMetrics,
+  ParallelSimLog,
+} from '../sim/types';
 
-let sim: Simulator | null = null;
+let simHarmoni: Simulator | null = null;
+let simBaseline: Simulator | null = null;
 let timerId: ReturnType<typeof setInterval> | null = null;
-let tickIntervalMs = 750; // decreased speed for clear observation (1.33 ticks/sec)
+let tickIntervalMs = 750; // default speed (1.33 ticks/sec)
 let isRunning = false;
 let continuousMode = true;
 
@@ -21,61 +30,96 @@ function initSim(cfg: SimInitConfig) {
   }
   isRunning = false;
 
-  sim = new Simulator({
-    mode: cfg.mode,
-    width: cfg.width,
-    height: cfg.height,
-    nRobots: cfg.n_robots,
-    seed: cfg.seed,
+  const w = cfg.width || 28;
+  const h = cfg.height || 20;
+  const nRobots = cfg.n_robots || 5;
+  const seed = cfg.seed || 42;
+  const nTasks = cfg.n_tasks || 16;
+
+  simHarmoni = new Simulator({
+    mode: 'harmoni',
+    width: w,
+    height: h,
+    nRobots,
+    seed,
     scenarioName: 'live_continuous',
   });
-  sim.seedTasks(cfg.n_tasks, cfg.seed);
+  simHarmoni.seedTasks(nTasks, seed);
 
-  // Send initial frame (tick 0)
-  postCurrentFrame();
+  simBaseline = new Simulator({
+    mode: 'baseline',
+    width: w,
+    height: h,
+    nRobots,
+    seed,
+    scenarioName: 'live_continuous',
+  });
+  simBaseline.seedTasks(nTasks, seed);
+
+  postCurrentFrames();
 }
 
-function postCurrentFrame() {
-  if (!sim) return;
-  // If there are recorded frames, send latest; otherwise record frame 0
-  if (sim.frames.length === 0) {
-    sim._tickOnce();
+function postCurrentFrames() {
+  if (!simHarmoni || !simBaseline) return;
+
+  if (simHarmoni.frames.length === 0) {
+    simHarmoni._tickOnce();
   }
-  const frame = sim.frames[sim.frames.length - 1];
+  if (simBaseline.frames.length === 0) {
+    simBaseline._tickOnce();
+  }
+
+  const hFrame = simHarmoni.frames[simHarmoni.frames.length - 1];
+  const bFrame = simBaseline.frames[simBaseline.frames.length - 1];
+  const hMetrics = simHarmoni.getCurrentMetrics();
+  const bMetrics = simBaseline.getCurrentMetrics();
+
+  const parallelPayload: ParallelSimFrame = {
+    harmoni: hFrame,
+    baseline: bFrame,
+  };
+  const parallelMetrics: ParallelSimMetrics = {
+    harmoni: hMetrics,
+    baseline: bMetrics,
+  };
+
   const msg: WorkerMessage = {
-    type: 'FRAME',
-    payload: frame,
-    metrics: sim.getCurrentMetrics(),
+    type: 'PARALLEL_FRAME',
+    payload: parallelPayload,
+    metrics: parallelMetrics,
   };
   self.postMessage(msg);
 }
 
 function doTick() {
-  if (!sim || !isRunning) return;
+  if (!simHarmoni || !simBaseline || !isRunning) return;
 
-  // In continuous mode, keep seeding tasks if pending tasks get low
-  if (continuousMode && sim.tasks.pendingTasks().length < 4) {
-    if (sim.bus.infraOnline) {
-      sim.addRandomTask();
-    }
-  }
+  const hFrame = simHarmoni.stepOnce();
+  const bFrame = simBaseline.stepOnce();
+  const hMetrics = simHarmoni.getCurrentMetrics();
+  const bMetrics = simBaseline.getCurrentMetrics();
 
-  const frame = sim.stepOnce();
   const msg: WorkerMessage = {
-    type: 'FRAME',
-    payload: frame,
-    metrics: sim.getCurrentMetrics(),
+    type: 'PARALLEL_FRAME',
+    payload: {
+      harmoni: hFrame,
+      baseline: bFrame,
+    },
+    metrics: {
+      harmoni: hMetrics,
+      baseline: bMetrics,
+    },
   };
   self.postMessage(msg);
 }
 
 function startSim() {
   if (isRunning) return;
-  if (!sim) {
+  if (!simHarmoni || !simBaseline) {
     initSim({
       mode: 'harmoni',
-      width: 22,
-      height: 16,
+      width: 28,
+      height: 20,
       n_robots: 5,
       seed: 42,
       n_tasks: 16,
@@ -94,7 +138,6 @@ function pauseSim() {
 }
 
 function setSpeed(multiplier: number) {
-  // 1x = 750ms per tick. 0.5x = 1500ms. 0.25x = 3000ms. 2x = 375ms.
   const base = 750;
   tickIntervalMs = Math.max(50, Math.round(base / Math.max(0.1, multiplier)));
   if (isRunning && timerId !== null) {
@@ -126,105 +169,111 @@ self.onmessage = (e: MessageEvent<WorkerCommand>) => {
         break;
 
       case 'SET_MODE':
-        if (sim) {
-          sim.mode = cmd.payload;
-          (sim.res as { mode: 'harmoni' | 'baseline' }).mode = cmd.payload;
-        }
+        // Both run in parallel, mode change can affect focused view or default
         break;
 
       case 'SPAWN_ROBOT':
-        if (sim) {
-          sim.spawnRobot();
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.spawnRobot();
+          simBaseline.spawnRobot();
+          postCurrentFrames();
         }
         break;
 
       case 'REMOVE_ROBOT':
-        if (sim) {
-          sim.removeRobot(cmd.payload);
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.removeRobot(cmd.payload);
+          simBaseline.removeRobot(cmd.payload);
+          postCurrentFrames();
         }
         break;
 
       case 'BLOCK_AISLE':
-        if (sim) {
-          sim.blockAisle(cmd.payload.a, cmd.payload.b);
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.blockAisle(cmd.payload.a, cmd.payload.b);
+          simBaseline.blockAisle(cmd.payload.a, cmd.payload.b);
+          postCurrentFrames();
         }
         break;
 
       case 'UNBLOCK_AISLE':
-        if (sim) {
-          sim.unblockAisle(cmd.payload.a, cmd.payload.b);
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.unblockAisle(cmd.payload.a, cmd.payload.b);
+          simBaseline.unblockAisle(cmd.payload.a, cmd.payload.b);
+          postCurrentFrames();
         }
         break;
 
       case 'DISABLE_ROBOT':
-        if (sim) {
-          const r = sim.robots.get(cmd.payload);
-          if (r) {
-            r.fail(sim.tick);
-            postCurrentFrame();
-          }
+        if (simHarmoni && simBaseline) {
+          simHarmoni.robots.get(cmd.payload)?.fail(simHarmoni.tick);
+          simBaseline.robots.get(cmd.payload)?.fail(simBaseline.tick);
+          postCurrentFrames();
         }
         break;
 
       case 'RECOVER_ROBOT':
-        if (sim) {
-          const r = sim.robots.get(cmd.payload);
-          if (r) {
-            r.recover(sim.tick);
-            postCurrentFrame();
-          }
+        if (simHarmoni && simBaseline) {
+          simHarmoni.robots.get(cmd.payload)?.recover(simHarmoni.tick);
+          simBaseline.robots.get(cmd.payload)?.recover(simBaseline.tick);
+          postCurrentFrames();
         }
         break;
 
       case 'TRIGGER_DEADLOCK':
-        if (sim) {
-          sim.triggerDeadlock();
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.triggerDeadlock();
+          simBaseline.triggerDeadlock();
+          postCurrentFrames();
         }
         break;
 
       case 'TRIGGER_INFRA_FAILURE':
-        if (sim) {
-          sim.bus.setInfra(false);
-          sim.logEvents.push({ tick: sim.tick, type: 'infra_status', online: false });
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.bus.setInfra(false);
+          simHarmoni.logEvents.push({ tick: simHarmoni.tick, type: 'infra_status', online: false });
+          simBaseline.bus.setInfra(false);
+          simBaseline.logEvents.push({ tick: simBaseline.tick, type: 'infra_status', online: false });
+          postCurrentFrames();
         }
         break;
 
       case 'RESTORE_INFRA':
-        if (sim) {
-          sim.bus.setInfra(true);
-          sim.logEvents.push({ tick: sim.tick, type: 'infra_status', online: true });
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.bus.setInfra(true);
+          simHarmoni.logEvents.push({ tick: simHarmoni.tick, type: 'infra_status', online: true });
+          simBaseline.bus.setInfra(true);
+          simBaseline.logEvents.push({ tick: simBaseline.tick, type: 'infra_status', online: true });
+          postCurrentFrames();
         }
         break;
 
       case 'TRIGGER_P2P_FAILURE':
-        if (sim) {
-          sim.bus.setP2p(false);
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.bus.setP2p(false);
+          simBaseline.bus.setP2p(false);
+          postCurrentFrames();
         }
         break;
 
       case 'RESTORE_P2P':
-        if (sim) {
-          sim.bus.setP2p(true);
-          postCurrentFrame();
+        if (simHarmoni && simBaseline) {
+          simHarmoni.bus.setP2p(true);
+          simBaseline.bus.setP2p(true);
+          postCurrentFrames();
         }
         break;
 
       case 'ADD_TASK':
-        if (sim) {
+        if (simHarmoni && simBaseline) {
           if (cmd.payload?.pickup && cmd.payload?.dropoff) {
-            sim.addTaskAt(cmd.payload.pickup, cmd.payload.dropoff);
+            simHarmoni.addTaskAt(cmd.payload.pickup, cmd.payload.dropoff);
+            simBaseline.addTaskAt(cmd.payload.pickup, cmd.payload.dropoff);
           } else {
-            sim.addRandomTask();
+            simHarmoni.addRandomTask();
+            simBaseline.addRandomTask();
           }
-          postCurrentFrame();
+          postCurrentFrames();
         }
         break;
 
@@ -233,8 +282,17 @@ self.onmessage = (e: MessageEvent<WorkerCommand>) => {
         continuousMode = false;
         const scenarioFn = ALL_SCENARIOS[cmd.payload];
         if (scenarioFn) {
-          const log = scenarioFn('harmoni');
-          const msg: WorkerMessage = { type: 'SCENARIO_DONE', payload: log };
+          const logHarmoni = scenarioFn('harmoni');
+          const logBaseline = scenarioFn('baseline');
+          const parallelLogs: ParallelSimLog = {
+            harmoni: logHarmoni,
+            baseline: logBaseline,
+          };
+          const msg: WorkerMessage = {
+            type: 'SCENARIO_DONE',
+            payload: logHarmoni,
+            parallel: parallelLogs,
+          };
           self.postMessage(msg);
         }
         break;

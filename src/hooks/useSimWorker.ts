@@ -15,11 +15,19 @@ import type {
 
 export function useSimWorker() {
   const workerRef = useRef<Worker | null>(null);
-  const [frame, setFrame] = useState<SimFrame | null>(null);
-  const [metrics, setMetrics] = useState<SimMetrics | null>(null);
+
+  // Parallel frames and metrics
+  const [frameHarmoni, setFrameHarmoni] = useState<SimFrame | null>(null);
+  const [frameBaseline, setFrameBaseline] = useState<SimFrame | null>(null);
+  const [metricsHarmoni, setMetricsHarmoni] = useState<SimMetrics | null>(null);
+  const [metricsBaseline, setMetricsBaseline] = useState<SimMetrics | null>(null);
+
+  // Benchmark & Scenarios
   const [benchmarkResult, setBenchmarkResult] = useState<BenchmarkResult | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
-  const [scenarioLog, setScenarioLog] = useState<SimLog | null>(null);
+  const [scenarioLogHarmoni, setScenarioLogHarmoni] = useState<SimLog | null>(null);
+  const [scenarioLogBaseline, setScenarioLogBaseline] = useState<SimLog | null>(null);
+
   const [isRunning, setIsRunning] = useState(false);
   const [speed, setSpeedState] = useState(1);
   const [mode, setModeState] = useState<'harmoni' | 'baseline'>('harmoni');
@@ -36,16 +44,31 @@ export function useSimWorker() {
 
     worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
       const msg = e.data;
-      if (msg.type === 'FRAME') {
-        setFrame(msg.payload);
-        setMetrics(msg.metrics);
+      if (msg.type === 'PARALLEL_FRAME') {
+        setFrameHarmoni(msg.payload.harmoni);
+        setFrameBaseline(msg.payload.baseline);
+        setMetricsHarmoni(msg.metrics.harmoni);
+        setMetricsBaseline(msg.metrics.baseline);
+      } else if (msg.type === 'FRAME') {
+        setFrameHarmoni(msg.payload);
+        setMetricsHarmoni(msg.metrics);
+        if (msg.parallel) {
+          setFrameBaseline(msg.parallel.baseline);
+          if (msg.parallelMetrics) setMetricsBaseline(msg.parallelMetrics.baseline);
+        }
       } else if (msg.type === 'BENCHMARK_RESULT') {
         setBenchmarkResult(msg.payload);
         setIsBenchmarking(false);
       } else if (msg.type === 'SCENARIO_DONE') {
-        setScenarioLog(msg.payload);
+        setScenarioLogHarmoni(msg.payload);
+        if (msg.parallel) {
+          setScenarioLogBaseline(msg.parallel.baseline);
+        }
         if (msg.payload.frames.length > 0) {
-          setFrame(msg.payload.frames[0]);
+          setFrameHarmoni(msg.payload.frames[0]);
+          if (msg.parallel && msg.parallel.baseline.frames.length > 0) {
+            setFrameBaseline(msg.parallel.baseline.frames[0]);
+          }
           setReplayTick(0);
           setIsReplaying(true);
         }
@@ -55,11 +78,11 @@ export function useSimWorker() {
       }
     };
 
-    // Initialize with default 5 robots, continuous on 22x16 grid (10x larger)
+    // Initialize with 28x20 grid, 5 robots
     const initialConfig: SimInitConfig = {
       mode: 'harmoni',
-      width: 22,
-      height: 16,
+      width: 28,
+      height: 20,
       n_robots: 5,
       seed: 42,
       n_tasks: 16,
@@ -91,12 +114,13 @@ export function useSimWorker() {
     (cfg?: Partial<SimInitConfig>) => {
       setIsRunning(false);
       setIsReplaying(false);
-      setScenarioLog(null);
+      setScenarioLogHarmoni(null);
+      setScenarioLogBaseline(null);
       setActiveScenario('continuous');
       const fullCfg: SimInitConfig = {
         mode: mode,
-        width: 22,
-        height: 16,
+        width: 28,
+        height: 20,
         n_robots: 5,
         seed: 42,
         n_tasks: 16,
@@ -216,25 +240,40 @@ export function useSimWorker() {
   // Replay control for scenario mode
   const setReplayIndex = useCallback(
     (index: number) => {
-      if (!scenarioLog || !scenarioLog.frames[index]) return;
+      if (scenarioLogHarmoni && scenarioLogHarmoni.frames[index]) {
+        setFrameHarmoni(scenarioLogHarmoni.frames[index]);
+      }
+      if (scenarioLogBaseline && scenarioLogBaseline.frames[index]) {
+        setFrameBaseline(scenarioLogBaseline.frames[index]);
+      }
       setReplayTick(index);
-      setFrame(scenarioLog.frames[index]);
     },
-    [scenarioLog]
+    [scenarioLogHarmoni, scenarioLogBaseline]
   );
 
   return {
-    frame,
-    metrics,
+    // Parallel states
+    frameHarmoni,
+    frameBaseline,
+    metricsHarmoni,
+    metricsBaseline,
+    scenarioLogHarmoni,
+    scenarioLogBaseline,
+
+    // Aliases for backwards compatibility
+    frame: frameHarmoni,
+    metrics: metricsHarmoni,
+    scenarioLog: scenarioLogHarmoni,
+
     benchmarkResult,
     isBenchmarking,
-    scenarioLog,
     isRunning,
     speed,
     mode,
     activeScenario,
     isReplaying,
     replayTick,
+
     // Actions
     start,
     pause,

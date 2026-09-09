@@ -195,10 +195,26 @@ export interface BenchmarkConfig {
   seed: number;
 }
 
+export interface ParallelSimFrame {
+  harmoni: SimFrame;
+  baseline: SimFrame;
+}
+
+export interface ParallelSimMetrics {
+  harmoni: SimMetrics;
+  baseline: SimMetrics;
+}
+
+export interface ParallelSimLog {
+  harmoni: SimLog;
+  baseline: SimLog;
+}
+
 export type WorkerMessage =
-  | { type: 'FRAME'; payload: SimFrame; metrics: SimMetrics }
+  | { type: 'FRAME'; payload: SimFrame; metrics: SimMetrics; parallel?: ParallelSimFrame; parallelMetrics?: ParallelSimMetrics }
+  | { type: 'PARALLEL_FRAME'; payload: ParallelSimFrame; metrics: ParallelSimMetrics }
   | { type: 'BENCHMARK_RESULT'; payload: BenchmarkResult }
-  | { type: 'SCENARIO_DONE'; payload: SimLog }
+  | { type: 'SCENARIO_DONE'; payload: SimLog; parallel?: ParallelSimLog }
   | { type: 'BENCHMARK_PROGRESS'; payload: { mode: string; pct: number } }
   | { type: 'ERROR'; payload: string };
 

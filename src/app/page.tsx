@@ -14,11 +14,14 @@ import type { RobotState } from '../sim/types';
 
 export default function HomePage() {
   const {
-    frame,
-    metrics,
+    frameHarmoni,
+    frameBaseline,
+    metricsHarmoni,
+    metricsBaseline,
     benchmarkResult,
     isBenchmarking,
-    scenarioLog,
+    scenarioLogHarmoni,
+    scenarioLogBaseline,
     isRunning,
     speed,
     mode,
@@ -51,7 +54,7 @@ export default function HomePage() {
 
   const handleBlockEdgeToggle = (a: [number, number], b: [number, number]) => {
     // Check if edge is currently blocked in frame
-    const isBlocked = frame?.blocked_edges.some(edge => {
+    const isBlocked = frameHarmoni?.blocked_edges.some(edge => {
       const [e1, e2] = edge;
       return (
         (e1[0] === a[0] && e1[1] === a[1] && e2[0] === b[0] && e2[1] === b[1]) ||
@@ -74,18 +77,21 @@ export default function HomePage() {
     }
   };
 
+  const gridW = activeScenario === '4_deadlock' ? 0 : 28;
+  const gridH = activeScenario === '4_deadlock' ? 0 : 20;
+
   return (
-    <main className="max-w-6xl mx-auto p-3 sm:p-5 flex flex-col gap-4">
+    <main className="max-w-7xl mx-auto p-3 sm:p-5 flex flex-col gap-4">
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#22302b] gap-2">
         <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-[#4fc6c0] shadow-[0_0_10px_#4fc6c0] animate-pulse" />
+          <div className="w-3.5 h-3.5 rounded-full bg-[#4fc6c0] shadow-[0_0_12px_#4fc6c0] animate-pulse" />
           <div>
             <h1 className="text-xl font-bold font-mono tracking-tight text-[#dfe8e3]">
-              HARMONI
+              HARMONI <span className="text-[#4fc6c0] text-sm font-normal">v2</span>
             </h1>
             <p className="text-xs text-[#7d918a]">
-              Edge-AI Distributed Fleet Coordination for AMRs • Browser Digital Twin
+              Parallel Digital Twin • HARMONI (Distributed) vs STANDARD (Stop-and-Wait Baseline)
             </p>
           </div>
         </div>
@@ -95,7 +101,7 @@ export default function HomePage() {
             SIH26123
           </span>
           <span className="px-2 py-0.5 rounded bg-[#4fc6c0]/15 border border-[#4fc6c0]/30 text-[#4fc6c0] font-bold">
-            Vercel Ready
+            28×20 Grid • Parallel Twin
           </span>
         </div>
       </header>
@@ -104,117 +110,180 @@ export default function HomePage() {
       <ScenarioTabs
         activeScenario={activeScenario}
         isReplaying={isReplaying}
-        scenarioLog={scenarioLog}
+        scenarioLog={scenarioLogHarmoni}
         replayTick={replayTick}
         onSelectScenario={handleSelectScenario}
         onSetReplayTick={setReplayIndex}
       />
 
-      {/* Network and Operating Mode Status */}
-      <StatusPanel frame={frame} tick={frame?.tick} mode={mode} />
+      {/* Operating Status Panel */}
+      <StatusPanel frame={frameHarmoni} tick={frameHarmoni?.tick} mode={mode} />
 
-      {/* Main Grid: Simulation Canvas & Controls */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left 2 Cols: Warehouse Canvas + Live Controls */}
-        <div className="lg:col-span-2 flex flex-col gap-3">
-          <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#7d918a]">
-                Warehouse Map & Space-Time Coordination Grid
+      {/* Side-by-Side Split Screen Canvas View */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* LEFT PANE: HARMONI Distributed */}
+        <div className="bg-[#131a17] border-2 border-[#4fc6c0]/60 rounded-xl p-3 flex flex-col gap-2 shadow-[0_0_15px_rgba(79,198,192,0.08)]">
+          <div className="flex items-center justify-between pb-2 border-b border-[#22302b]">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#4fc6c0] shadow-[0_0_8px_#4fc6c0] animate-pulse" />
+              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#4fc6c0]">
+                HARMONI • Distributed Fleet
               </h2>
-              <span className="text-[10px] font-mono text-[#7d918a]">
-                Click adjacent nodes to block/unblock aisles
-              </span>
             </div>
-
-            <SimCanvas
-              frame={frame}
-              width={activeScenario === '4_deadlock' ? 0 : (scenarioLog?.warehouse?.width ?? 22)}
-              height={activeScenario === '4_deadlock' ? 0 : (scenarioLog?.warehouse?.height ?? 16)}
-              onBlockEdge={handleBlockEdgeToggle}
-              onSelectRobot={r => setInspectedRobot(r)}
-            />
-
-            {/* Canvas Legend */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-[10px] font-mono text-[#7d918a]">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#4fc6c0]" /> AMR Normal
+            <div className="flex items-center gap-2 font-mono text-[10px]">
+              <span className="px-2 py-0.5 rounded bg-[#4fc6c0]/20 text-[#4fc6c0] font-bold border border-[#4fc6c0]/40">
+                Space-Time Res. + Selective P2P
               </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#e0a63a]" /> Waiting (Conflict)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-[#e3595a]" /> Failed / Safe Mode
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded border border-[#5fbf7a] bg-[#5fbf7a]/20" /> Pickup (P)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded border border-[#9a86e0] bg-[#9a86e0]/20" /> Dropoff (D)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-0.5 bg-[#e3595a]" /> Blocked Aisle
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-0.5 border-t border-dashed border-[#4fc6c0]" /> P2P Mesh Link
+              <span className="text-[#dfe8e3] bg-[#0f1513] px-1.5 py-0.5 rounded border border-[#22302b]">
+                Tick {frameHarmoni?.tick ?? 0}
               </span>
             </div>
           </div>
 
-          {/* Interactive Control Panel */}
-          <ControlPanel
-            isRunning={isRunning}
-            speed={speed}
-            mode={mode}
-            frame={frame}
-            onStart={start}
-            onPause={pause}
-            onReset={reset}
-            onSetSpeed={setSpeed}
-            onSetMode={setMode}
-            onSpawnRobot={spawnRobot}
-            onRemoveRobot={removeRobot}
-            onBlockAisle={blockAisle}
-            onUnblockAisle={unblockAisle}
-            onDisableRobot={disableRobot}
-            onRecoverRobot={recoverRobot}
-            onTriggerDeadlock={triggerDeadlock}
-            onTriggerInfraFailure={triggerInfraFailure}
-            onRestoreInfra={restoreInfra}
-            onTriggerP2pFailure={triggerP2pFailure}
-            onRestoreP2p={restoreP2p}
-            onAddTask={addTask}
-          />
-        </div>
-
-        {/* Right 1 Col: Robot Roster & Event Feed */}
-        <div className="flex flex-col gap-4">
-          <RobotRoster
-            frame={frame}
+          <SimCanvas
+            frame={frameHarmoni}
+            width={gridW}
+            height={gridH}
+            onBlockEdge={handleBlockEdgeToggle}
             onSelectRobot={r => setInspectedRobot(r)}
           />
 
-          <EventFeed events={frame?.events_this_tick || []} />
+          {/* HARMONI Quick Stats */}
+          <div className="grid grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Delivered</span>
+              <span className="text-sm font-bold text-[#5fbf7a]">{metricsHarmoni?.tasks_completed ?? 0}</span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Waiting</span>
+              <span className="text-sm font-bold text-[#e0a63a]">
+                {frameHarmoni?.robots.filter(r => r.state === 'waiting').length ?? 0}
+              </span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Deadlocks</span>
+              <span className="text-sm font-bold text-[#2ecc71]">
+                {metricsHarmoni?.deadlocks_resolved ?? 0} RESOLVED ✓
+              </span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Comm Events</span>
+              <span className="text-sm font-bold text-[#4fc6c0]">
+                {frameHarmoni?.robots.reduce((acc, r) => acc + (r.comm_events || 0), 0) ?? 0}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT PANE: STANDARD Baseline */}
+        <div className="bg-[#131a17] border-2 border-[#5a6660]/70 rounded-xl p-3 flex flex-col gap-2 shadow-[0_0_15px_rgba(90,102,96,0.08)]">
+          <div className="flex items-center justify-between pb-2 border-b border-[#22302b]">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#e0a63a]" />
+              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#a0a8a4]">
+                STANDARD • Stop-and-Wait Mutex
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 font-mono text-[10px]">
+              <span className="px-2 py-0.5 rounded bg-[#5a6660]/30 text-[#dfe8e3] font-bold border border-[#5a6660]/50">
+                Centralized Mutex + Beacon
+              </span>
+              <span className="text-[#dfe8e3] bg-[#0f1513] px-1.5 py-0.5 rounded border border-[#22302b]">
+                Tick {frameBaseline?.tick ?? 0}
+              </span>
+            </div>
+          </div>
+
+          <SimCanvas
+            frame={frameBaseline}
+            width={gridW}
+            height={gridH}
+            onBlockEdge={handleBlockEdgeToggle}
+            onSelectRobot={r => setInspectedRobot(r)}
+          />
+
+          {/* Baseline Quick Stats */}
+          <div className="grid grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Delivered</span>
+              <span className="text-sm font-bold text-[#a0a8a4]">{metricsBaseline?.tasks_completed ?? 0}</span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Waiting</span>
+              <span className="text-sm font-bold text-[#e3595a]">
+                {frameBaseline?.robots.filter(r => r.state === 'waiting').length ?? 0}
+              </span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Deadlocks</span>
+              <span className="text-sm font-bold text-[#e3595a]">
+                {(metricsBaseline?.deadlocks_detected ?? 0) > 0 ? 'STALLED ✗' : '0'}
+              </span>
+            </div>
+            <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
+              <span className="text-[9px] text-[#7d918a]">Comm Events</span>
+              <span className="text-sm font-bold text-[#7d918a]">
+                {frameBaseline?.robots.reduce((acc, r) => acc + (r.comm_events || 0), 0) ?? 0}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Live Metrics Row */}
-      <MetricsPanel metrics={metrics} />
+      {/* Global Interactive Control Panel */}
+      <ControlPanel
+        isRunning={isRunning}
+        speed={speed}
+        mode={mode}
+        frame={frameHarmoni}
+        onStart={start}
+        onPause={pause}
+        onReset={reset}
+        onSetSpeed={setSpeed}
+        onSetMode={setMode}
+        onSpawnRobot={spawnRobot}
+        onRemoveRobot={removeRobot}
+        onBlockAisle={blockAisle}
+        onUnblockAisle={unblockAisle}
+        onDisableRobot={disableRobot}
+        onRecoverRobot={recoverRobot}
+        onTriggerDeadlock={triggerDeadlock}
+        onTriggerInfraFailure={triggerInfraFailure}
+        onRestoreInfra={restoreInfra}
+        onTriggerP2pFailure={triggerP2pFailure}
+        onRestoreP2p={restoreP2p}
+        onAddTask={addTask}
+      />
 
-      {/* Real Simulation Benchmark Panel */}
+      {/* Real-time Side-by-Side Comparison Metrics */}
+      <MetricsPanel
+        metricsHarmoni={metricsHarmoni}
+        metricsBaseline={metricsBaseline}
+      />
+
+      {/* Bottom Row: Robot Roster & Event Feed */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <RobotRoster
+          frame={frameHarmoni}
+          onSelectRobot={r => setInspectedRobot(r)}
+        />
+        <EventFeed events={frameHarmoni?.events_this_tick || []} />
+      </div>
+
+      {/* Benchmark Verification Section */}
       <BenchmarkPanel
         benchmarkResult={benchmarkResult}
         isBenchmarking={isBenchmarking}
         onRunBenchmark={runBenchmarkTest}
       />
 
-      {/* Onboard Robot Inspection Modal */}
+      {/* Robot Telemetry Modal */}
       {inspectedRobot && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
           <div className="bg-[#131a17] border border-[#22302b] rounded-lg max-w-md w-full p-4 flex flex-col gap-3 font-mono text-xs">
             <div className="flex items-center justify-between pb-2 border-b border-[#22302b]">
               <h3 className="text-sm font-bold text-[#4fc6c0]">
-                Onboard Telemetry — AMR #{inspectedRobot.id}
+                AMR #{inspectedRobot.id} Live Telemetry
               </h3>
               <button
                 onClick={() => setInspectedRobot(null)}
@@ -226,14 +295,14 @@ export default function HomePage() {
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div>
-                <span className="text-[#7d918a]">Physical Position:</span>
+                <span className="text-[#7d918a]">Position:</span>
                 <div className="text-[#dfe8e3] font-bold">
                   [{inspectedRobot.pos[0]}, {inspectedRobot.pos[1]}]
                 </div>
               </div>
 
               <div>
-                <span className="text-[#7d918a]">Operating State:</span>
+                <span className="text-[#7d918a]">State:</span>
                 <div className="text-[#5fbf7a] font-bold uppercase">
                   {inspectedRobot.state}
                 </div>
@@ -247,12 +316,12 @@ export default function HomePage() {
               </div>
 
               <div>
-                <span className="text-[#7d918a]">Battery SoC:</span>
+                <span className="text-[#7d918a]">Battery:</span>
                 <div className="text-[#dfe8e3]">{inspectedRobot.battery}%</div>
               </div>
 
               <div>
-                <span className="text-[#7d918a]">Active Task Lease:</span>
+                <span className="text-[#7d918a]">Task Lease:</span>
                 <div className="text-[#dfe8e3]">
                   {inspectedRobot.task_id !== null ? `#${inspectedRobot.task_id}` : 'None'}
                 </div>
@@ -287,13 +356,10 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Architectural Disclosures & Notes */}
+      {/* Architecture Footer */}
       <footer className="mt-4 pt-4 border-t border-[#22302b] text-[11px] text-[#7d918a] leading-relaxed flex flex-col gap-2 font-mono">
         <div>
-          <b className="text-[#dfe8e3]">HARMONI Architecture Principle:</b> All decision-making is distributed. No central controller computes robot paths. Each robot runs local deterministic A* navigation, requests space-time reservations, senses obstacles via simulated LiDAR, and exchanges intent over the peer-to-peer bus abstraction.
-        </div>
-        <div>
-          <b className="text-[#dfe8e3]">Network Disclosure:</b> Wireless networking is modeled logically as dual-layer pub/sub (Infrastructure WMS + P2P Mesh), honestly demonstrating behavior under Wi-Fi severing rather than simulating RF physics in Vercel.
+          <b className="text-[#dfe8e3]">HARMONI vs Standard Baseline:</b> HARMONI operates on localized space-time reservations, selective P2P coordination, and decentralized cycle recovery. Standard baseline uses centralized mutex locks, full-rate beacons, and has no cycle escape mechanisms.
         </div>
       </footer>
     </main>

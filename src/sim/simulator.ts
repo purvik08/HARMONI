@@ -124,12 +124,18 @@ export class Simulator {
   }
 
   addRandomTask(): void {
-    const nodes = this.wh.nodes;
-    let pickup = this.rng.choice(nodes);
-    let dropoff = this.rng.choice(nodes);
+    const pickupNodes = this.wh.zones.pickup.size > 0
+      ? Array.from(this.wh.zones.pickup).map(k => WH.keyToPos(k))
+      : this.wh.nodes.filter(n => !this.wh.zones.obstacles.has(WH.posKey(n)));
+    const dropoffNodes = this.wh.zones.dropoff.size > 0
+      ? Array.from(this.wh.zones.dropoff).map(k => WH.keyToPos(k))
+      : this.wh.nodes.filter(n => !this.wh.zones.obstacles.has(WH.posKey(n)));
+
+    const pickup = this.rng.choice(pickupNodes);
+    let dropoff = this.rng.choice(dropoffNodes);
     let tries = 0;
     while (WH.posKey(dropoff) === WH.posKey(pickup) && tries < 10) {
-      dropoff = this.rng.choice(nodes);
+      dropoff = this.rng.choice(dropoffNodes);
       tries++;
     }
     this.tasks.addTask(pickup, dropoff, this.tick);
@@ -174,6 +180,11 @@ export class Simulator {
   _tickOnce(): void {
     const t = this.tick;
 
+    // Continuous replenishment: ensure there are always pending orders available for AMRs
+    if (this.tasks.pendingTasks().length < Math.max(6, this.robots.size * 2)) {
+      this.addRandomTask();
+    }
+
     // 1. sense obstacle events + publish state/intent (selective in harmoni mode)
     for (const r of this.robots.values()) {
       if (r.active) {
@@ -195,9 +206,11 @@ export class Simulator {
         idle.push([r.id, r.pos, Warehouse.dist]);
       }
     }
-    const awarded = this.tasks.runAuction(t, idle);
-    if (awarded !== null) {
-      this.robots.get(awarded.holder!)?.assignTask(awarded, t);
+    const awardedList = this.tasks.runAuction(t, idle);
+    for (const awarded of awardedList) {
+      if (awarded.holder !== null) {
+        this.robots.get(awarded.holder)?.assignTask(awarded, t);
+      }
     }
 
     // 3. each robot decides + executes its move

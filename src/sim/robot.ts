@@ -218,11 +218,18 @@ export class Robot {
 
   onLegArrival(task: Task): 'picked_up' | 'delivered' {
     if (this.leg === 'to_pickup') {
-      this.leg = 'to_dropoff'; this.goal = task.dropoff; this._planTo(this.goal);
+      this.leg = 'to_dropoff';
+      this.goal = task.dropoff;
+      this._planTo(this.goal);
+      this.state = 'moving';
       return 'picked_up';
     } else {
-      this.stats.tasks_completed++; this.task_id = null; this.goal = null;
-      this.leg = null; this.path = [this.pos]; this.state = 'idle';
+      this.stats.tasks_completed++;
+      this.task_id = null;
+      this.goal = null;
+      this.leg = null;
+      this.path = [this.pos];
+      this.state = 'idle';
       return 'delivered';
     }
   }

@@ -87,23 +87,28 @@ export class TaskPool {
     }
   }
 
-  runAuction(tick: number, idleRobots: Array<[number, Pos, (a: Pos, b: Pos) => number]>): Task | null {
+  runAuction(tick: number, idleRobots: Array<[number, Pos, (a: Pos, b: Pos) => number]>): Task[] {
+    const awarded: Task[] = [];
+    const available = [...idleRobots];
+
     for (const t of this.pendingTasks()) {
-      const bids: Array<[number, number]> = [];
-      for (const [robotId, pos, distFn] of idleRobots) {
-        bids.push([distFn(pos, t.pickup), robotId]);
-      }
+      if (available.length === 0) break;
+      const bids: Array<[number, number, number]> = []; // [cost, robotId, indexInAvailable]
+      available.forEach(([robotId, pos, distFn], idx) => {
+        bids.push([distFn(pos, t.pickup), robotId, idx]);
+      });
       if (bids.length === 0) continue;
       bids.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-      const [winnerCost, winnerId] = bids[0];
+      const [winnerCost, winnerId, winnerIdx] = bids[0];
       t.status = TaskStatus.ASSIGNED;
       t.holder = winnerId;
       t.lease_expiry = tick + TaskPool.LEASE_TIMEOUT;
       this.bus.publishTaskEvent({ tick, type: 'task_assigned', task_id: t.task_id, holder: winnerId, bid: winnerCost });
       this.logEvents.push({ tick, type: 'task_assigned', task_id: t.task_id, holder: winnerId });
-      return t;
+      awarded.push(t);
+      available.splice(winnerIdx, 1);
     }
-    return null;
+    return awarded;
   }
 
   complete(taskId: number, tick: number): void {
