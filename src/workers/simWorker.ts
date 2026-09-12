@@ -63,10 +63,10 @@ function postCurrentFrames() {
   if (!simHarmoni || !simBaseline) return;
 
   if (simHarmoni.frames.length === 0) {
-    simHarmoni._tickOnce();
+    simHarmoni.recordInitialFrame();
   }
   if (simBaseline.frames.length === 0) {
-    simBaseline._tickOnce();
+    simBaseline.recordInitialFrame();
   }
 
   const hFrame = simHarmoni.frames[simHarmoni.frames.length - 1];
@@ -200,6 +200,22 @@ self.onmessage = (e: MessageEvent<WorkerCommand>) => {
         if (simHarmoni && simBaseline) {
           simHarmoni.unblockAisle(cmd.payload.a, cmd.payload.b);
           simBaseline.unblockAisle(cmd.payload.a, cmd.payload.b);
+          postCurrentFrames();
+        }
+        break;
+
+      case 'TOGGLE_NODE_OBSTACLE':
+        if (simHarmoni && simBaseline) {
+          simHarmoni.toggleNodeObstacle(cmd.payload);
+          simBaseline.toggleNodeObstacle(cmd.payload);
+          postCurrentFrames();
+        }
+        break;
+
+      case 'CLEAR_OBSTACLES':
+        if (simHarmoni && simBaseline) {
+          simHarmoni.clearAllDynamicObstacles();
+          simBaseline.clearAllDynamicObstacles();
           postCurrentFrames();
         }
         break;

@@ -172,6 +172,17 @@ export function useSimWorker() {
     [send]
   );
 
+  const toggleNodeObstacle = useCallback(
+    (pos: Pos) => {
+      send({ type: 'TOGGLE_NODE_OBSTACLE', payload: pos });
+    },
+    [send]
+  );
+
+  const clearObstacles = useCallback(() => {
+    send({ type: 'CLEAR_OBSTACLES' });
+  }, [send]);
+
   const disableRobot = useCallback(
     (id: number) => {
       send({ type: 'DISABLE_ROBOT', payload: id });
@@ -284,6 +295,8 @@ export function useSimWorker() {
     removeRobot,
     blockAisle,
     unblockAisle,
+    toggleNodeObstacle,
+    clearObstacles,
     disableRobot,
     recoverRobot,
     triggerDeadlock,

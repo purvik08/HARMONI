@@ -392,12 +392,26 @@ export class Robot {
       }
     }
 
-    const occupantId = occupancy.get(Warehouse.posKey(nextNode));
+    let occupantId = occupancy.get(Warehouse.posKey(nextNode));
     if (occupantId !== undefined && occupantId !== this.id) {
-      this.state = 'waiting'; this.stats.ticks_waiting++; this.consecutive_wait++;
-      this.waiting_on = occupantId;
-      this._setDecision('SAFETY', 'WAIT', `target occupied by AMR #${occupantId}`, null, null, 'NONE', tick);
-      return { id: this.id, event: 'wait', pos: this.pos, waiting_on: occupantId };
+      if (this.mode === 'harmoni') {
+        const alternate = this._findPreemptiveReroute(nextNode, occupancy, this.bus.peerStates(this.id, this.pos));
+        if (alternate) {
+          nextNode = alternate;
+          this.waiting_on = null;
+          this._setDecision('NAVIGATION', 'REROUTE', 'occupied target cell avoided by preemptive reroute', null, null, 'NONE', tick);
+        } else {
+          this.state = 'waiting'; this.stats.ticks_waiting++; this.consecutive_wait++;
+          this.waiting_on = occupantId;
+          this._setDecision('SAFETY', 'WAIT', `target occupied by AMR #${occupantId}`, null, null, 'NONE', tick);
+          return { id: this.id, event: 'wait', pos: this.pos, waiting_on: occupantId };
+        }
+      } else {
+        this.state = 'waiting'; this.stats.ticks_waiting++; this.consecutive_wait++;
+        this.waiting_on = occupantId;
+        this._setDecision('SAFETY', 'WAIT', `target occupied by AMR #${occupantId}`, null, null, 'NONE', tick);
+        return { id: this.id, event: 'wait', pos: this.pos, waiting_on: occupantId };
+      }
     }
 
     let requestedResource = this.commitment?.resourceId ?? null;
@@ -415,15 +429,15 @@ export class Robot {
             this.waiting_on = null;
             this._setDecision('NAVIGATION', 'REROUTE', 'resource conflict avoided by local reroute', null, null, 'NONE', tick);
           } else {
-          this.state = 'waiting';
-          this.stats.ticks_waiting++;
-          this.consecutive_wait++;
-          this.waiting_on = grant.owner;
-          this._setDecision('RESOURCE', 'YIELD', grant.reason, requestedResource, null, grant.phase, tick);
-          if (this.wh.isIntersection(nextNode)) {
-            this.logEvents.push({ tick, type: 'intersection_conflict', node: nextNode, yielding_robot: this.id, priority_robot: grant.owner ?? undefined });
-          }
-          return { id: this.id, event: 'wait', pos: this.pos, waiting_on: grant.owner };
+            this.state = 'waiting';
+            this.stats.ticks_waiting++;
+            this.consecutive_wait++;
+            this.waiting_on = grant.owner;
+            this._setDecision('RESOURCE', 'YIELD', grant.reason, requestedResource, null, grant.phase, tick);
+            if (this.wh.isIntersection(nextNode)) {
+              this.logEvents.push({ tick, type: 'intersection_conflict', node: nextNode, yielding_robot: this.id, priority_robot: grant.owner ?? undefined });
+            }
+            return { id: this.id, event: 'wait', pos: this.pos, waiting_on: grant.owner };
           }
         }
         if (requestedResource && !this.res.commitResource(requestedResource, this.id, tick)) {
@@ -437,13 +451,13 @@ export class Robot {
         }
         if (requestedResource) {
           this.commitment = {
-          resourceId: requestedResource,
-          from: this.pos,
-          to: nextNode,
-          phase: 'COMMIT',
-          expiresTick: tick + 5,
-          lockedUntilTick: tick + 2,
-          reason: grant.reason,
+            resourceId: requestedResource,
+            from: this.pos,
+            to: nextNode,
+            phase: 'COMMIT',
+            expiresTick: tick + 5,
+            lockedUntilTick: tick + 2,
+            reason: grant.reason,
           };
           this.state = 'committed';
           this._setDecision('RESOURCE', 'COMMIT_CROSS', grant.reason, requestedResource, requestedResource, 'COMMIT', tick);
@@ -456,13 +470,30 @@ export class Robot {
     // stepping plus the edge-swap guard keeps this browser model conservative.
     const granted = !this.bus.p2pOnline || this.res.request(this.id, nextNode, this.pos, tick + 1);
     if (!granted) {
-      this.state = 'waiting'; this.stats.ticks_waiting++;
-      const holder = this.res.holderOf(nextNode, tick + 1) ?? null;
-      this.waiting_on = holder; this.consecutive_wait++;
-      this._setDecision('RESOURCE', 'YIELD', 'space-time reservation denied', requestedResource, requestedResource, this.commitment?.phase ?? 'NONE', tick);
-      if (this.wh.isIntersection(nextNode))
-        this.logEvents.push({ tick, type: 'intersection_conflict', node: nextNode, yielding_robot: this.id, priority_robot: holder ?? undefined });
-      return { id: this.id, event: 'wait', pos: this.pos, waiting_on: holder ?? null };
+      if (this.mode === 'harmoni') {
+        const alternate = this._findPreemptiveReroute(nextNode, occupancy, this.bus.peerStates(this.id, this.pos));
+        if (alternate && (!this.bus.p2pOnline || this.res.request(this.id, alternate, this.pos, tick + 1))) {
+          nextNode = alternate;
+          this.waiting_on = null;
+          this._setDecision('NAVIGATION', 'REROUTE', 'space-time reservation conflict avoided by preemptive reroute', null, null, 'NONE', tick);
+        } else {
+          this.state = 'waiting'; this.stats.ticks_waiting++;
+          const holder = this.res.holderOf(nextNode, tick + 1) ?? null;
+          this.waiting_on = holder; this.consecutive_wait++;
+          this._setDecision('RESOURCE', 'YIELD', 'space-time reservation denied', requestedResource, requestedResource, this.commitment?.phase ?? 'NONE', tick);
+          if (this.wh.isIntersection(nextNode))
+            this.logEvents.push({ tick, type: 'intersection_conflict', node: nextNode, yielding_robot: this.id, priority_robot: holder ?? undefined });
+          return { id: this.id, event: 'wait', pos: this.pos, waiting_on: holder ?? null };
+        }
+      } else {
+        this.state = 'waiting'; this.stats.ticks_waiting++;
+        const holder = this.res.holderOf(nextNode, tick + 1) ?? null;
+        this.waiting_on = holder; this.consecutive_wait++;
+        this._setDecision('RESOURCE', 'YIELD', 'space-time reservation denied', requestedResource, requestedResource, this.commitment?.phase ?? 'NONE', tick);
+        if (this.wh.isIntersection(nextNode))
+          this.logEvents.push({ tick, type: 'intersection_conflict', node: nextNode, yielding_robot: this.id, priority_robot: holder ?? undefined });
+        return { id: this.id, event: 'wait', pos: this.pos, waiting_on: holder ?? null };
+      }
     }
 
     const prevPos = this.pos;

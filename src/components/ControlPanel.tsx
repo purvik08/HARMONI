@@ -8,6 +8,8 @@ interface ControlPanelProps {
   speed: number;
   mode: 'harmoni' | 'baseline';
   frame: SimFrame | null;
+  obstacleMode?: boolean;
+  onToggleObstacleMode?: () => void;
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
@@ -17,6 +19,8 @@ interface ControlPanelProps {
   onRemoveRobot: (id: number) => void;
   onBlockAisle: (a: Pos, b: Pos) => void;
   onUnblockAisle: (a: Pos, b: Pos) => void;
+  onToggleNodeObstacle?: (pos: Pos) => void;
+  onClearAllObstacles?: () => void;
   onDisableRobot: (id: number) => void;
   onRecoverRobot: (id: number) => void;
   onTriggerDeadlock: () => void;
@@ -32,6 +36,8 @@ export function ControlPanel({
   speed,
   mode,
   frame,
+  obstacleMode = false,
+  onToggleObstacleMode,
   onStart,
   onPause,
   onReset,
@@ -41,6 +47,8 @@ export function ControlPanel({
   onRemoveRobot,
   onBlockAisle,
   onUnblockAisle,
+  onToggleNodeObstacle,
+  onClearAllObstacles,
   onDisableRobot,
   onRecoverRobot,
   onTriggerDeadlock,
@@ -51,6 +59,8 @@ export function ControlPanel({
   onAddTask,
 }: ControlPanelProps) {
   const [selectedRobotId, setSelectedRobotId] = useState<number>(0);
+  const [customX, setCustomX] = useState<number>(13);
+  const [customY, setCustomY] = useState<number>(10);
 
   const robots = frame?.robots || [];
   const infraOnline = frame?.infra_online ?? true;
@@ -182,62 +192,127 @@ export function ControlPanel({
           </button>
         </div>
 
-        {/* Dynamic Aisle Block & Fleet Management */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-          {/* Quick Block Preset */}
-          <div className="flex items-center gap-1.5 bg-[#0f1513] border border-[#22302b] px-2.5 py-1.5 rounded text-xs">
-            <span className="text-[#7d918a] font-mono text-[11px]">Aisle [3,1]-[3,2]:</span>
+        {/* Interactive Obstacle Placement & Map Control */}
+        <div className="bg-[#0f1513] border border-[#22302b] rounded p-2.5 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onToggleObstacleMode}
+                className={`px-3 py-1 rounded text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                  obstacleMode
+                    ? 'bg-[#e3595a] text-white shadow-[0_0_10px_rgba(227,89,90,0.5)] animate-pulse'
+                    : 'bg-[#18241f] border border-[#e3595a]/40 text-[#e3595a] hover:bg-[#e3595a]/20'
+                }`}
+              >
+                {obstacleMode ? '🛑 OBSTACLE PLACEMENT: ACTIVE (Click Map)' : '➕ OBSTACLE PLACEMENT MODE'}
+              </button>
+
+              {onClearAllObstacles && (
+                <button
+                  onClick={onClearAllObstacles}
+                  className="px-2.5 py-1 bg-[#18241f] hover:bg-[#251717] border border-[#e3595a]/30 text-[#dfe8e3] rounded text-xs font-mono transition"
+                >
+                  ✕ Clear All Dynamic Obstacles
+                </button>
+              )}
+            </div>
+
+            {/* Custom Coordinate Blocker */}
+            <div className="flex items-center gap-1 text-xs font-mono">
+              <span className="text-[#7d918a]">Coord:</span>
+              <input
+                type="number"
+                min="0"
+                max="27"
+                value={customX}
+                onChange={e => setCustomX(Math.max(0, Math.min(27, Number(e.target.value))))}
+                className="w-10 bg-[#131a17] text-[#dfe8e3] border border-[#22302b] rounded px-1 py-0.5 text-center text-xs"
+                title="X coordinate"
+              />
+              <span className="text-[#7d918a]">,</span>
+              <input
+                type="number"
+                min="0"
+                max="19"
+                value={customY}
+                onChange={e => setCustomY(Math.max(0, Math.min(19, Number(e.target.value))))}
+                className="w-10 bg-[#131a17] text-[#dfe8e3] border border-[#22302b] rounded px-1 py-0.5 text-center text-xs"
+                title="Y coordinate"
+              />
+              <button
+                onClick={() => onToggleNodeObstacle && onToggleNodeObstacle([customX, customY])}
+                className="px-2 py-0.5 bg-[#e3595a]/15 text-[#e3595a] border border-[#e3595a]/30 rounded hover:bg-[#e3595a]/25 text-xs font-mono ml-1"
+              >
+                Toggle Cell Barrier
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Obstacle Presets */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-[#22302b]/60 text-[11px] font-mono">
+            <span className="text-[#7d918a]">Quick Presets:</span>
             <button
               onClick={() => onBlockAisle([3, 1], [3, 2])}
-              className="px-2 py-0.5 bg-[#e3595a]/15 text-[#e3595a] border border-[#e3595a]/30 rounded hover:bg-[#e3595a]/25 text-[11px] font-mono"
+              className="px-2 py-0.5 bg-[#131a17] hover:bg-[#1f2d27] border border-[#22302b] text-[#dfe8e3] rounded"
             >
-              Block
+              Dock [3,1]-[3,2]
             </button>
             <button
-              onClick={() => onUnblockAisle([3, 1], [3, 2])}
-              className="px-2 py-0.5 bg-[#5fbf7a]/15 text-[#5fbf7a] border border-[#5fbf7a]/30 rounded hover:bg-[#5fbf7a]/25 text-[11px] font-mono"
+              onClick={() => onBlockAisle([13, 10], [14, 10])}
+              className="px-2 py-0.5 bg-[#131a17] hover:bg-[#1f2d27] border border-[#22302b] text-[#dfe8e3] rounded"
             >
-              Clear
-            </button>
-            <span className="text-[10px] text-[#7d918a] ml-auto italic">or click grid</span>
-          </div>
-
-          {/* Robot Selector & Actions */}
-          <div className="flex items-center gap-1.5 bg-[#0f1513] border border-[#22302b] px-2.5 py-1.5 rounded text-xs">
-            <span className="text-[#7d918a] font-mono text-[11px]">Robot:</span>
-            <select
-              value={selectedRobotId}
-              onChange={e => setSelectedRobotId(Number(e.target.value))}
-              className="bg-[#131a17] text-[#dfe8e3] border border-[#22302b] rounded px-1.5 py-0.5 text-[11px] font-mono"
-            >
-              {robots.map(r => (
-                <option key={r.id} value={r.id}>
-                  #{r.id} ({r.state})
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={() => onDisableRobot(selectedRobotId)}
-              className="px-2 py-0.5 bg-[#e3595a]/15 text-[#e3595a] border border-[#e3595a]/30 rounded hover:bg-[#e3595a]/25 text-[11px] font-mono"
-            >
-              Disable
+              Intersection [13,10]-[14,10]
             </button>
             <button
-              onClick={() => onRecoverRobot(selectedRobotId)}
-              className="px-2 py-0.5 bg-[#5fbf7a]/15 text-[#5fbf7a] border border-[#5fbf7a]/30 rounded hover:bg-[#5fbf7a]/25 text-[11px] font-mono"
+              onClick={() => onBlockAisle([10, 10], [10, 11])}
+              className="px-2 py-0.5 bg-[#131a17] hover:bg-[#1f2d27] border border-[#22302b] text-[#dfe8e3] rounded"
             >
-              Recover
+              Cross [10,10]-[10,11]
             </button>
-
             <button
-              onClick={onSpawnRobot}
-              className="px-2 py-0.5 bg-[#4fc6c0]/15 text-[#4fc6c0] border border-[#4fc6c0]/30 rounded hover:bg-[#4fc6c0]/25 text-[11px] font-mono ml-auto"
-              title="Spawn additional AMR"
+              onClick={() => onBlockAisle([20, 10], [21, 10])}
+              className="px-2 py-0.5 bg-[#131a17] hover:bg-[#1f2d27] border border-[#22302b] text-[#dfe8e3] rounded"
             >
-              + AMR
+              Handoff [20,10]-[21,10]
             </button>
           </div>
+        </div>
+
+        {/* Fleet Management */}
+        <div className="flex items-center gap-1.5 bg-[#0f1513] border border-[#22302b] px-2.5 py-1.5 rounded text-xs">
+          <span className="text-[#7d918a] font-mono text-[11px]">Robot:</span>
+          <select
+            value={selectedRobotId}
+            onChange={e => setSelectedRobotId(Number(e.target.value))}
+            className="bg-[#131a17] text-[#dfe8e3] border border-[#22302b] rounded px-1.5 py-0.5 text-[11px] font-mono"
+          >
+            {robots.map(r => (
+              <option key={r.id} value={r.id}>
+                #{r.id} ({r.state})
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => onDisableRobot(selectedRobotId)}
+            className="px-2 py-0.5 bg-[#e3595a]/15 text-[#e3595a] border border-[#e3595a]/30 rounded hover:bg-[#e3595a]/25 text-[11px] font-mono"
+          >
+            Disable
+          </button>
+          <button
+            onClick={() => onRecoverRobot(selectedRobotId)}
+            className="px-2 py-0.5 bg-[#5fbf7a]/15 text-[#5fbf7a] border border-[#5fbf7a]/30 rounded hover:bg-[#5fbf7a]/25 text-[11px] font-mono"
+          >
+            Recover
+          </button>
+
+          <button
+            onClick={onSpawnRobot}
+            className="px-2.5 py-0.5 bg-[#4fc6c0]/15 text-[#4fc6c0] border border-[#4fc6c0]/30 rounded hover:bg-[#4fc6c0]/25 text-[11px] font-mono ml-auto font-bold"
+            title="Spawn additional AMR"
+          >
+            + Spawn AMR
+          </button>
         </div>
       </div>
     </div>

@@ -89,8 +89,8 @@ export class Warehouse {
     const obstacles = new Set<string>();
     const edge_nodes = new Set<string>();
 
-    for (const p of [[1,4],[2,4],[3,4],[1,5],[2,5],[3,5],[1,6],[2,6],[3,6]] as Pos[]) pickup.add(Warehouse.posKey(p));
-    for (const p of [[24,13],[25,13],[26,13],[24,14],[25,14],[26,14],[24,15],[25,15],[26,15]] as Pos[]) dropoff.add(Warehouse.posKey(p));
+    for (const p of [[1,1],[2,1],[3,1],[1,2],[2,2],[3,2],[1,3],[2,3],[3,3]] as Pos[]) pickup.add(Warehouse.posKey(p));
+    for (const p of [[24,16],[25,16],[26,16],[24,17],[25,17],[26,17],[24,18],[25,18],[26,18]] as Pos[]) dropoff.add(Warehouse.posKey(p));
 
     for (let x = 6; x < 22; x++) for (let y = 4; y < 8; y++) racks.add(`${x},${y}`);
     for (let x = 6; x < 22; x++) for (let y = 12; y < 16; y++) racks.add(`${x},${y}`);

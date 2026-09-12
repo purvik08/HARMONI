@@ -246,7 +246,12 @@ export class Simulator {
     }
     const results = new Map<number, ReturnType<Robot['step']>>();
     for (const r of this.robots.values()) {
-      results.set(r.id, r.step(t, occupancy));
+      const stepRes = r.step(t, occupancy);
+      results.set(r.id, stepRes);
+      if (stepRes.event === 'move' && stepRes.prevPos) {
+        occupancy.delete(Warehouse.posKey(stepRes.prevPos));
+        occupancy.set(Warehouse.posKey(stepRes.pos), r.id);
+      }
     }
 
     // 4. renew leases for robots that made progress
@@ -531,6 +536,90 @@ export class Simulator {
     this.res.releaseAllFuture(r1.id);
     r0.goal = g1; r0._replan();
     r1.goal = g0; r1._replan();
+  }
+
+  recordInitialFrame(): SimFrame {
+    const t = this.tick;
+    const trajViews = Array.from(this.robots.values()).map(r => ({
+      id: r.id, pos: r.pos, path: r.path, active: r.active, state: r.state
+    }));
+    const conflicts = this.conflictGraph.computeConflicts(trajViews, t);
+    const activePositions = Array.from(this.robots.values()).filter(r => r.active).map(r => r.pos);
+    const congestionScores = this.edgeAI.getIntersectionCongestion(this.wh.getIntersections(), t, activePositions);
+    const zoneCongestion = this.edgeAI.getZoneCongestion(congestionScores);
+
+    const frame: SimFrame = {
+      tick: t,
+      infra_online: this.bus.infraOnline,
+      p2p_online: this.bus.p2pOnline,
+      robots: [],
+      blocked_edges: this.wh.getBlockedEdges().map(([a, b]) => [a, b]),
+      events_this_tick: this.logEvents.filter(e => e.tick === t),
+      reservations: this.res.getAllReservations(),
+      tasks: this.tasks.getSnapshots(),
+      conflict_edges: conflicts,
+      congestion: zoneCongestion,
+    };
+    for (const r of this.robots.values()) {
+      frame.robots.push({
+        id: r.id,
+        pos: r.pos,
+        path: [...r.path],
+        state: r.active ? r.state : 'failed',
+        task_id: r.task_id,
+        battery: Math.round(r.battery * 10) / 10,
+        active: r.active,
+        waiting_on: r.waiting_on,
+        heading: r.heading,
+        comm_events: r.stats.comm_events,
+        comm_bytes: r.stats.comm_events * 64,
+        zone: this.wh.getZone(r.pos),
+        optical_signal: r.getOpticalSignal(),
+        decision: r.decisionDebug.decision,
+        hierarchy_level: r.decisionDebug.hierarchy_level,
+        requested_resource: r.decisionDebug.requested_resource,
+        owned_resource: r.decisionDebug.owned_resource,
+        resource_phase: r.decisionDebug.resource_phase,
+        reason: r.decisionDebug.reason,
+        committed_until: r.decisionDebug.committed_until,
+        decision_locked: r.decisionDebug.locked,
+        priority_key: r.decisionDebug.priority_key,
+      });
+    }
+    this.frames.push(frame);
+    return frame;
+  }
+
+  toggleNodeObstacle(pos: Pos): boolean {
+    const allNeighbors: Pos[] = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = pos[0] + dx, ny = pos[1] + dy;
+      if (nx >= 0 && nx < this.wh.width && ny >= 0 && ny < this.wh.height) {
+        allNeighbors.push([nx, ny] as Pos);
+      }
+    }
+    const isCurrentlyBlocked = allNeighbors.length > 0 && allNeighbors.every(nb => this.wh.edgeBlocked(pos, nb));
+    if (isCurrentlyBlocked) {
+      for (const nb of allNeighbors) {
+        this.wh.unblockEdge(pos, nb);
+        this.bus.publishObstacleEvent({ tick: this.tick, type: 'cleared', edge: [pos, nb], ttl: 60 });
+      }
+      return false;
+    } else {
+      for (const nb of allNeighbors) {
+        this.wh.blockEdge(pos, nb);
+        this.bus.publishObstacleEvent({ tick: this.tick, type: 'blocked', edge: [pos, nb], ttl: 60 });
+      }
+      return true;
+    }
+  }
+
+  clearAllDynamicObstacles(): void {
+    const blocked = this.wh.getBlockedEdges();
+    for (const [a, b] of blocked) {
+      this.wh.unblockEdge(a, b);
+      this.bus.publishObstacleEvent({ tick: this.tick, type: 'cleared', edge: [a, b], ttl: 60 });
+    }
   }
 
   getCurrentMetrics(): SimMetrics { return { ...this.metrics }; }

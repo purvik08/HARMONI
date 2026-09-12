@@ -203,6 +203,8 @@ export type WorkerCommand =
   | { type: 'REMOVE_ROBOT'; payload: number }
   | { type: 'BLOCK_AISLE'; payload: { a: Pos; b: Pos } }
   | { type: 'UNBLOCK_AISLE'; payload: { a: Pos; b: Pos } }
+  | { type: 'TOGGLE_NODE_OBSTACLE'; payload: Pos }
+  | { type: 'CLEAR_OBSTACLES' }
   | { type: 'DISABLE_ROBOT'; payload: number }
   | { type: 'RECOVER_ROBOT'; payload: number }
   | { type: 'TRIGGER_DEADLOCK' }

@@ -39,6 +39,8 @@ export default function HomePage() {
     removeRobot,
     blockAisle,
     unblockAisle,
+    toggleNodeObstacle,
+    clearObstacles,
     disableRobot,
     recoverRobot,
     triggerDeadlock,
@@ -53,6 +55,7 @@ export default function HomePage() {
   } = useSimWorker();
 
   const [inspectedRobot, setInspectedRobot] = useState<RobotState | null>(null);
+  const [obstacleMode, setObstacleMode] = useState<boolean>(false);
 
   const handleBlockEdgeToggle = (a: [number, number], b: [number, number]) => {
     // Check if edge is currently blocked in frame
@@ -69,6 +72,10 @@ export default function HomePage() {
     } else {
       blockAisle(a, b);
     }
+  };
+
+  const handleToggleNode = (pos: [number, number]) => {
+    toggleNodeObstacle(pos);
   };
 
   const handleSelectScenario = (id: string) => {
@@ -152,7 +159,9 @@ export default function HomePage() {
             frame={frameHarmoni}
             width={gridW}
             height={gridH}
+            obstacleMode={obstacleMode}
             onBlockEdge={handleBlockEdgeToggle}
+            onToggleNodeObstacle={handleToggleNode}
             onSelectRobot={r => setInspectedRobot(r)}
           />
 
@@ -206,7 +215,9 @@ export default function HomePage() {
             frame={frameBaseline}
             width={gridW}
             height={gridH}
+            obstacleMode={obstacleMode}
             onBlockEdge={handleBlockEdgeToggle}
+            onToggleNodeObstacle={handleToggleNode}
             onSelectRobot={r => setInspectedRobot(r)}
           />
 
@@ -244,6 +255,8 @@ export default function HomePage() {
         speed={speed}
         mode={mode}
         frame={frameHarmoni}
+        obstacleMode={obstacleMode}
+        onToggleObstacleMode={() => setObstacleMode(m => !m)}
         onStart={start}
         onPause={pause}
         onReset={reset}
@@ -253,6 +266,8 @@ export default function HomePage() {
         onRemoveRobot={removeRobot}
         onBlockAisle={blockAisle}
         onUnblockAisle={unblockAisle}
+        onToggleNodeObstacle={handleToggleNode}
+        onClearAllObstacles={clearObstacles}
         onDisableRobot={disableRobot}
         onRecoverRobot={recoverRobot}
         onTriggerDeadlock={triggerDeadlock}

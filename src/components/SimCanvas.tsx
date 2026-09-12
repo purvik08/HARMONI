@@ -18,7 +18,9 @@ interface SimCanvasProps {
   frame: SimFrame | null;
   width?: number;
   height?: number;
+  obstacleMode?: boolean;
   onBlockEdge?: (a: Pos, b: Pos) => void;
+  onToggleNodeObstacle?: (pos: Pos) => void;
   onSelectRobot?: (robot: RobotState | null) => void;
 }
 
@@ -26,7 +28,9 @@ export function SimCanvas({
   frame,
   width = 22,
   height = 16,
+  obstacleMode = false,
   onBlockEdge,
+  onToggleNodeObstacle,
   onSelectRobot,
 }: SimCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -81,6 +85,26 @@ export function SimCanvas({
     const scaleY = canvas.height / rect.height;
     const clickX = (e.clientX - rect.left) * scaleX;
     const clickY = (e.clientY - rect.top) * scaleY;
+
+    // In obstacle mode, direct node click toggles node obstacle
+    if (obstacleMode) {
+      const node = getNearestNode(clickX, clickY);
+      if (node) {
+        if (onToggleNodeObstacle) {
+          onToggleNodeObstacle(node);
+        } else if (onBlockEdge) {
+          // Fallback: if clicking two adjacent nodes
+          if (!selectedNode) {
+            setSelectedNode(node);
+          } else {
+            const isAdj = Math.abs(selectedNode[0] - node[0]) + Math.abs(selectedNode[1] - node[1]) === 1;
+            if (isAdj) onBlockEdge(selectedNode, node);
+            setSelectedNode(null);
+          }
+        }
+      }
+      return;
+    }
 
     // Check if clicked a robot
     if (frame) {
@@ -159,8 +183,8 @@ export function SimCanvas({
     if (width >= 20 && height >= 16) {
       const cw = cellW, ch = cellH;
       const zoneData: Array<{ nodes: Array<[number,number]>; fill: string; stroke?: string }> = [
-        { nodes: [[1,1],[2,1],[3,1],[1,2],[2,2],[3,2]], fill: 'rgba(46,204,113,0.13)', stroke: 'rgba(46,204,113,0.35)' },   // pickup
-        { nodes: [[24,1],[25,1],[26,1],[24,2],[25,2],[26,2]], fill: 'rgba(52,152,219,0.13)', stroke: 'rgba(52,152,219,0.35)' }, // dropoff
+        { nodes: [[1,1],[2,1],[3,1],[1,2],[2,2],[3,2],[1,3],[2,3],[3,3]], fill: 'rgba(46,204,113,0.14)', stroke: 'rgba(46,204,113,0.4)' },   // pickup
+        { nodes: [[24,16],[25,16],[26,16],[24,17],[25,17],[26,17],[24,18],[25,18],[26,18]], fill: 'rgba(52,152,219,0.14)', stroke: 'rgba(52,152,219,0.4)' }, // dropoff
       ];
       // racks
       for (let x = 6; x < 22; x++) for (let y = 4; y < 8; y++) {
@@ -214,7 +238,7 @@ export function SimCanvas({
       ctx.font = `bold ${Math.max(6, Math.min(9, minCell*0.5))}px monospace`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const zoneLabels: Array<[number,number,string,string]> = [
-        [2,1,'PICKUP','#2ecc71'], [25,1,'DROPOFF','#3498db'],
+        [2,2,'PICKUP','#2ecc71'], [25,17,'DROPOFF','#3498db'],
         [13,5,'RACK A','#8B6914'], [13,13,'RACK B','#8B6914'],
         [3,10,'EDGE','#4fc6c0'], [13,10,'EDGE','#4fc6c0'], [24,10,'EDGE','#4fc6c0'],
       ];
@@ -534,9 +558,15 @@ export function SimCanvas({
         width={canvasWidth}
         height={canvasHeight}
         onClick={handleClick}
-        className="w-full h-auto cursor-pointer block"
+        className={`w-full h-auto block ${obstacleMode ? 'cursor-crosshair' : 'cursor-pointer'}`}
       />
-      {selectedNode && (
+      {obstacleMode && (
+        <div className="absolute top-2 left-2 bg-[#131a17]/95 border border-[#e3595a] px-3 py-1.5 rounded text-xs text-[#e3595a] font-mono flex items-center gap-2 shadow-lg animate-pulse">
+          <span className="w-2 h-2 rounded-full bg-[#e3595a]" />
+          <span><b>OBSTACLE MODE ACTIVE:</b> Click any intersection or cell to add/remove barrier</span>
+        </div>
+      )}
+      {selectedNode && !obstacleMode && (
         <div className="absolute bottom-2 left-2 bg-[#131a17]/90 border border-[#e0a63a] px-3 py-1 rounded text-xs text-[#e0a63a] font-mono">
           Click an adjacent node to toggle block on aisle from [{selectedNode[0]},{selectedNode[1]}]
         </div>
