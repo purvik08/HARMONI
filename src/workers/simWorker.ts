@@ -4,7 +4,7 @@
  */
 
 import { Simulator } from '../sim/simulator';
-import { runBenchmark } from '../sim/benchmark';
+import { runBenchmark, runMonteCarloBenchmark } from '../sim/benchmark';
 import { ALL_SCENARIOS } from '../sim/scenarios';
 import type {
   WorkerCommand,
@@ -319,6 +319,14 @@ self.onmessage = (e: MessageEvent<WorkerCommand>) => {
         const result = runBenchmark(bCfg.n_robots, bCfg.n_tasks, bCfg.max_ticks, bCfg.seed);
         const bMsg: WorkerMessage = { type: 'BENCHMARK_RESULT', payload: result };
         self.postMessage(bMsg);
+        break;
+
+      case 'RUN_MONTE_CARLO':
+        pauseSim();
+        const mcCfg = cmd.payload;
+        const mcResult = runMonteCarloBenchmark(mcCfg.n_robots, mcCfg.n_tasks, mcCfg.max_ticks, mcCfg.n_runs);
+        const mcMsg: WorkerMessage = { type: 'MONTE_CARLO_RESULT', payload: mcResult };
+        self.postMessage(mcMsg);
         break;
 
       default:

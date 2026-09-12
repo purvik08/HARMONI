@@ -9,7 +9,7 @@
  * - Network telemetry: tracks message counts and byte transfers per robot.
  */
 
-import type { Pos, SimEvent } from './types';
+import type { Pos, SimEvent, P2PMessageTrace } from './types';
 import { Warehouse } from './warehouse';
 
 export interface StateMsg {
@@ -45,6 +45,8 @@ export class NetworkBus {
   private _stateMsgs: Map<number, StateMsg> = new Map();
   private _obstacleEvents: ObstacleEvent[] = [];
   private _taskPoolMsgs: SimEvent[] = [];
+  private _packetTraces: P2PMessageTrace[] = [];
+  private _traceSeq = 0;
 
   // Network Telemetry
   totalMessagesSent = 0;
@@ -63,6 +65,32 @@ export class NetworkBus {
     this.totalMessagesSent++;
     // Compact JSON wire size estimate: ~64 bytes per state broadcast
     this.totalBytesTransferred += 64;
+
+    this.recordTrace({
+      tick: msg.tick,
+      from: robotId,
+      to: 'BROADCAST',
+      type: 'INTENT',
+      ttl: msg.ttl,
+      payload: `pos:[${msg.pos[0]},${msg.pos[1]}] → next:[${msg.intent_next[0]},${msg.intent_next[1]}] (prio:${msg.priority})`,
+      zone: msg.zone,
+    });
+  }
+
+  recordTrace(trace: Omit<P2PMessageTrace, 'id'>): void {
+    this._traceSeq++;
+    const fullTrace: P2PMessageTrace = {
+      ...trace,
+      id: `pkt-${trace.tick}-${this._traceSeq}`,
+    };
+    this._packetTraces.push(fullTrace);
+    if (this._packetTraces.length > 300) {
+      this._packetTraces = this._packetTraces.slice(-200);
+    }
+  }
+
+  getRecentTraces(limit = 40): P2PMessageTrace[] {
+    return this._packetTraces.slice(-limit);
   }
 
   publishObstacleEvent(event: ObstacleEvent): void {
@@ -70,6 +98,15 @@ export class NetworkBus {
     this._obstacleEvents.push(event);
     this.totalMessagesSent++;
     this.totalBytesTransferred += 48;
+
+    this.recordTrace({
+      tick: event.tick,
+      from: 0,
+      to: 'BROADCAST',
+      type: 'OBSTACLE_ALERT',
+      ttl: event.ttl,
+      payload: `Obstacle ${event.type}: [${event.edge[0][0]},${event.edge[0][1]}]-[${event.edge[1][0]},${event.edge[1][1]}]`,
+    });
 
     if (this._obstacleEvents.length > 200) {
       this._obstacleEvents = this._obstacleEvents.slice(-200);
@@ -132,9 +169,11 @@ export class NetworkBus {
     this._stateMsgs.clear();
     this._obstacleEvents = [];
     this._taskPoolMsgs = [];
+    this._packetTraces = [];
     this.infraOnline = true;
     this.p2pOnline = true;
     this.totalMessagesSent = 0;
     this.totalBytesTransferred = 0;
   }
 }
+

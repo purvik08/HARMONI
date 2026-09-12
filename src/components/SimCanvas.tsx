@@ -35,6 +35,7 @@ export function SimCanvas({
 }: SimCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<Pos | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<Pos | null>(null);
   const [selectedRobotId, setSelectedRobotId] = useState<number | null>(null);
 
   // Derive canvas dimensions and cell spacing
@@ -75,6 +76,22 @@ export function SimCanvas({
       }
     }
     return bestNode;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
+    const node = getNearestNode(clickX, clickY);
+    setHoveredNode(node);
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredNode(null);
   };
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -538,6 +555,46 @@ export function SimCanvas({
       ctx.fillRect(bx, by, barW * bPct, barH);
     });
 
+    // Dynamic Trajectory Conflict Edges (P2P Conflict Horizon H=4)
+    if (frame.conflict_edges && frame.conflict_edges.length > 0) {
+      const robotMap = new Map(frame.robots.map(r => [r.id, r]));
+      for (const c of frame.conflict_edges) {
+        const r1 = robotMap.get(c.robotA);
+        const r2 = robotMap.get(c.robotB);
+        if (r1 && r2 && r1.active && r2.active) {
+          const [x1, y1] = xy(r1.pos);
+          const [x2, y2] = xy(r2.pos);
+          const [cx, cy] = xy(c.conflictNode);
+
+          ctx.strokeStyle = '#e0a63a';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Conflict intersection node halo
+          ctx.fillStyle = 'rgba(224, 166, 58, 0.25)';
+          ctx.beginPath();
+          ctx.arc(cx, cy, robotRadius * 1.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#e0a63a';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Label
+          ctx.fillStyle = '#e0a63a';
+          ctx.font = 'bold 8px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(`CONFLICT t+${c.timeA - frameTick}`, cx, cy - robotRadius - 4);
+        }
+      }
+    }
+
     // Node selection halo for interactive aisle blocking
     if (selectedNode) {
       const [sx, sy] = xy(selectedNode);
@@ -549,7 +606,19 @@ export function SimCanvas({
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [frame, width, height, selectedNode, selectedRobotId, minCell, robotRadius, dotRadius, fontPt]);
+
+    // Hovered node highlight (especially in obstacle mode)
+    if (hoveredNode && obstacleMode) {
+      const [hx, hy] = xy(hoveredNode);
+      ctx.strokeStyle = '#e3595a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hx, hy, minCell * 0.46, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(227, 89, 90, 0.2)';
+      ctx.fill();
+    }
+  }, [frame, width, height, selectedNode, hoveredNode, selectedRobotId, obstacleMode, minCell, robotRadius, dotRadius, fontPt]);
 
   return (
     <div className="relative w-full overflow-hidden rounded-lg border border-[#22302b] bg-[#0f1513]">
@@ -558,14 +627,30 @@ export function SimCanvas({
         width={canvasWidth}
         height={canvasHeight}
         onClick={handleClick}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
         className={`w-full h-auto block ${obstacleMode ? 'cursor-crosshair' : 'cursor-pointer'}`}
       />
       {obstacleMode && (
         <div className="absolute top-2 left-2 bg-[#131a17]/95 border border-[#e3595a] px-3 py-1.5 rounded text-xs text-[#e3595a] font-mono flex items-center gap-2 shadow-lg animate-pulse">
           <span className="w-2 h-2 rounded-full bg-[#e3595a]" />
-          <span><b>OBSTACLE MODE ACTIVE:</b> Click any intersection or cell to add/remove barrier</span>
+          <span><b>OBSTACLE MODE ACTIVE:</b> Click any cell or aisle on map to place/remove barrier</span>
         </div>
       )}
+
+      {/* Real-world Coordinate HUD */}
+      <div className="absolute bottom-2 right-2 bg-[#131a17]/90 border border-[#22302b] px-2.5 py-1 rounded text-[10px] text-[#7d918a] font-mono flex items-center gap-2">
+        <span>Grid: {effW}×{effH}</span>
+        {hoveredNode && (
+          <>
+            <span className="text-[#22302b]">|</span>
+            <span className="text-[#4fc6c0] font-bold">
+              Hover: [{hoveredNode[0]}, {hoveredNode[1]}]
+            </span>
+          </>
+        )}
+      </div>
+
       {selectedNode && !obstacleMode && (
         <div className="absolute bottom-2 left-2 bg-[#131a17]/90 border border-[#e0a63a] px-3 py-1 rounded text-xs text-[#e0a63a] font-mono">
           Click an adjacent node to toggle block on aisle from [{selectedNode[0]},{selectedNode[1]}]

@@ -81,6 +81,9 @@ export class Simulator {
       collisions: 0, deadlocks_detected: 0, deadlocks_resolved: 0,
       total_wait_ticks: 0, total_move_ticks: 0, replans: 0,
       tasks_completed: 0, task_completion_times: [],
+      potential_conflicts_detected: 0,
+      conflicts_arbitrated_p2p: 0,
+      safety_stops_executed: 0,
     };
     this.scheduledActions = [];
     this.nextRobotId = 0;
@@ -102,6 +105,14 @@ export class Simulator {
       }
     }
   }
+
+  lastDeadlockCycle: import('./types').DeadlockCycleDetail | null = null;
+  conflictMetrics: import('./types').ConflictMetrics = {
+    potential_conflicts_detected: 0,
+    conflicts_arbitrated_p2p: 0,
+    safety_stops_executed: 0,
+    actual_collisions: 0,
+  };
 
   schedule(tick: number, fn: () => void, label?: string): void {
     this.scheduledActions.push({ tick, fn, label });
@@ -126,6 +137,20 @@ export class Simulator {
         tries++;
       }
       this.tasks.addTask(pickup, dropoff, this.tick);
+    }
+
+    // Allocate initial tasks to idle robots on seed so initial frame is populated
+    const idle: Array<[number, Pos, (a: Pos, b: Pos) => number]> = [];
+    for (const r of this.robots.values()) {
+      if (r.active && r.task_id === null) {
+        idle.push([r.id, r.pos, Warehouse.dist]);
+      }
+    }
+    const awardedList = this.tasks.runAuction(this.tick, idle);
+    for (const awarded of awardedList) {
+      if (awarded.holder !== null) {
+        this.robots.get(awarded.holder)?.assignTask(awarded, this.tick);
+      }
     }
   }
 
@@ -347,6 +372,15 @@ export class Simulator {
 
     // v2: baseline mode — no recovery, log as stalled
     if (this.mode === 'baseline') {
+      this.lastDeadlockCycle = {
+        tick: t,
+        cycle: [...cycle],
+        recovery_robot: cycle[0] ?? 0,
+        priority_score: 'None (Baseline)',
+        escape_node: null,
+        resolved: false,
+        latency_ticks: t - (this._deadlockFirstDetectedTick ?? t) + 1,
+      };
       this.logEvents.push({ tick: t, type: 'deadlock_detected', cycle, recovery_robot: undefined, resolved: false, escape_node: null });
       return;
     }
@@ -379,6 +413,17 @@ export class Simulator {
     }
 
     if (resolved) this.metrics.deadlocks_resolved++;
+
+    this.lastDeadlockCycle = {
+      tick: t,
+      cycle: [...cycle],
+      recovery_robot: recoveryId,
+      priority_score: robot.decisionDebug.priority_key || `AMR #${recoveryId}`,
+      escape_node: escape,
+      resolved,
+      latency_ticks: t - (this._deadlockFirstDetectedTick ?? t) + 1,
+    };
+
     this.logEvents.push({
       tick: t, type: 'deadlock_detected', cycle, recovery_robot: recoveryId,
       resolved, escape_node: escape,
@@ -420,6 +465,13 @@ export class Simulator {
     conflicts?: ConflictEdge[],
     zoneCongestion?: ZoneCongestion
   ): void {
+    if (conflicts && conflicts.length > 0) {
+      this.conflictMetrics.potential_conflicts_detected += conflicts.length;
+      if (this.mode === 'harmoni') {
+        this.conflictMetrics.conflicts_arbitrated_p2p += conflicts.length;
+      }
+    }
+
     const frame: SimFrame = {
       tick: t,
       infra_online: this.bus.infraOnline,
@@ -431,6 +483,14 @@ export class Simulator {
       tasks: this.tasks.getSnapshots(),
       conflict_edges: conflicts,
       congestion: zoneCongestion,
+      p2p_messages: this.bus.getRecentTraces(40),
+      active_deadlock: this.lastDeadlockCycle,
+      conflict_metrics: {
+        potential_conflicts_detected: this.conflictMetrics.potential_conflicts_detected,
+        conflicts_arbitrated_p2p: this.conflictMetrics.conflicts_arbitrated_p2p,
+        safety_stops_executed: this.conflictMetrics.safety_stops_executed,
+        actual_collisions: this.metrics.collisions,
+      },
     };
     for (const r of this.robots.values()) {
       frame.robots.push({
@@ -559,6 +619,14 @@ export class Simulator {
       tasks: this.tasks.getSnapshots(),
       conflict_edges: conflicts,
       congestion: zoneCongestion,
+      p2p_messages: this.bus.getRecentTraces(40),
+      active_deadlock: this.lastDeadlockCycle,
+      conflict_metrics: {
+        potential_conflicts_detected: this.conflictMetrics.potential_conflicts_detected,
+        conflicts_arbitrated_p2p: this.conflictMetrics.conflicts_arbitrated_p2p,
+        safety_stops_executed: this.conflictMetrics.safety_stops_executed,
+        actual_collisions: this.metrics.collisions,
+      },
     };
     for (const r of this.robots.values()) {
       frame.robots.push({

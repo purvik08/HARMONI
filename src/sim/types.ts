@@ -94,6 +94,34 @@ export interface SimEvent {
   resource_id?: string;
 }
 
+export interface P2PMessageTrace {
+  id: string;
+  tick: number;
+  from: number;
+  to: number | 'BROADCAST';
+  type: 'INTENT' | 'RESERVATION_REQ' | 'RESERVATION_GRANT' | 'ACK_YIELD' | 'DEADLOCK_PROBE' | 'OBSTACLE_ALERT';
+  ttl: number;
+  payload: string;
+  zone?: 'A' | 'B' | 'C';
+}
+
+export interface DeadlockCycleDetail {
+  tick: number;
+  cycle: number[];
+  recovery_robot: number;
+  priority_score: string;
+  escape_node: Pos | null;
+  resolved: boolean;
+  latency_ticks: number;
+}
+
+export interface ConflictMetrics {
+  potential_conflicts_detected: number;
+  conflicts_arbitrated_p2p: number;
+  safety_stops_executed: number;
+  actual_collisions: number;
+}
+
 import type { ConflictEdge } from './conflictGraph';
 
 /** One tick's complete snapshot */
@@ -112,6 +140,12 @@ export interface SimFrame {
   conflict_edges?: ConflictEdge[];
   /** Edge AI zone congestion levels */
   congestion?: { zoneA: number; zoneB: number; zoneC: number };
+  /** Live P2P message trace stream for this frame */
+  p2p_messages?: P2PMessageTrace[];
+  /** Active deadlock cycle information if one was detected/resolved */
+  active_deadlock?: DeadlockCycleDetail | null;
+  /** Conflict safety and arbitration counters */
+  conflict_metrics?: ConflictMetrics;
 }
 
 export interface TaskSnapshot {
@@ -132,6 +166,9 @@ export interface SimMetrics {
   replans: number;
   tasks_completed: number;
   task_completion_times: number[];
+  potential_conflicts_detected?: number;
+  conflicts_arbitrated_p2p?: number;
+  safety_stops_executed?: number;
 }
 
 /** Full simulation log (matches Python export_log) */
@@ -175,6 +212,7 @@ export interface BenchmarkModeResult {
   deadlocks_resolved: number;
   replans: number;
   avg_task_completion_ticks: number | null;
+  comm_messages?: number;
 }
 
 export interface BenchmarkComparison {
@@ -182,6 +220,7 @@ export interface BenchmarkComparison {
   avg_wait_reduction_pct?: number;
   collisions_baseline: number;
   collisions_harmoni: number;
+  throughput_gain_pct?: number;
 }
 
 export interface BenchmarkResult {
@@ -189,6 +228,44 @@ export interface BenchmarkResult {
   baseline: BenchmarkModeResult;
   harmoni: BenchmarkModeResult;
   comparison: BenchmarkComparison;
+}
+
+export interface StatisticalMetric {
+  mean: number;
+  stdDev: number;
+  min: number;
+  max: number;
+}
+
+export interface MonteCarloBenchmarkResult {
+  config: { n_robots: number; n_tasks: number; max_ticks: number; n_runs: number };
+  runs: BenchmarkResult[];
+  summary: {
+    harmoni: {
+      throughput: StatisticalMetric;
+      completion_ticks: StatisticalMetric;
+      avg_wait_ticks: StatisticalMetric;
+      total_wait_ticks: StatisticalMetric;
+      collisions: StatisticalMetric;
+      replans: StatisticalMetric;
+      deadlocks_resolved: StatisticalMetric;
+    };
+    baseline: {
+      throughput: StatisticalMetric;
+      completion_ticks: StatisticalMetric;
+      avg_wait_ticks: StatisticalMetric;
+      total_wait_ticks: StatisticalMetric;
+      collisions: StatisticalMetric;
+      replans: StatisticalMetric;
+      deadlocks_resolved: StatisticalMetric;
+    };
+    improvement: {
+      throughput_gain_pct: number;
+      wait_reduction_pct: number;
+      replan_reduction_pct: number;
+      collision_reduction_pct: number;
+    };
+  };
 }
 
 // ---- Worker message types ----
@@ -214,6 +291,7 @@ export type WorkerCommand =
   | { type: 'RESTORE_P2P' }
   | { type: 'ADD_TASK'; payload?: { pickup?: Pos; dropoff?: Pos } }
   | { type: 'RUN_BENCHMARK'; payload: BenchmarkConfig }
+  | { type: 'RUN_MONTE_CARLO'; payload: { n_robots: number; n_tasks: number; max_ticks: number; n_runs: number } }
   | { type: 'RUN_SCENARIO'; payload: string };
 
 export interface SimInitConfig {
@@ -251,6 +329,7 @@ export type WorkerMessage =
   | { type: 'FRAME'; payload: SimFrame; metrics: SimMetrics; parallel?: ParallelSimFrame; parallelMetrics?: ParallelSimMetrics }
   | { type: 'PARALLEL_FRAME'; payload: ParallelSimFrame; metrics: ParallelSimMetrics }
   | { type: 'BENCHMARK_RESULT'; payload: BenchmarkResult }
+  | { type: 'MONTE_CARLO_RESULT'; payload: MonteCarloBenchmarkResult }
   | { type: 'SCENARIO_DONE'; payload: SimLog; parallel?: ParallelSimLog }
   | { type: 'BENCHMARK_PROGRESS'; payload: { mode: string; pct: number } }
   | { type: 'ERROR'; payload: string };
