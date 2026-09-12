@@ -16,9 +16,11 @@ const SCENARIOS = [
   { id: 'continuous', label: 'Live Sandbox', desc: 'Continuous AMR Fleet Simulation' },
   { id: '1_intersection_conflict', label: '1: Conflict', desc: '3-way Intersection Conflict & Priority' },
   { id: '2_blocked_aisle', label: '2: Blocked Aisle', desc: 'Dynamic Obstacle & Local Replanning' },
-  { id: '3_robot_failure', label: '3: AMR Failure', desc: 'AMR Offline & Lease Reassignment' },
-  { id: '4_deadlock', label: '4: Deadlock', desc: 'Circular Wait & Deterministic Recovery' },
-  { id: '5_infra_failure', label: '5: Wi-Fi Loss', desc: 'Central WMS Failure & P2P Autonomy' },
+  { id: '3_deadlock', label: '3: Deadlock', desc: 'Circular Wait & Deterministic Recovery' },
+  { id: '5_robot_failure', label: '4: AMR Failure', desc: 'AMR Offline & Lease Reassignment' },
+  { id: '6_infra_failure', label: '5: Infra Loss', desc: 'WMS Link Down & Local/P2P Operation' },
+  { id: '6_comm_loss', label: '6: P2P Loss', desc: 'Digital Coordination Loss & Local Safety' },
+  { id: '7_fleet_scaling', label: '7: Scaling', desc: 'Local Conflict Graph & Communication Load' },
 ];
 
 export function ScenarioTabs({

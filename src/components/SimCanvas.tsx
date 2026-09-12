@@ -120,6 +120,7 @@ export function SimCanvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const frameTick = frame?.tick ?? 0;
 
     // Background
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -201,7 +202,7 @@ export function SimCanvas({
         ctx.beginPath(); ctx.moveTo(px+m,py-m); ctx.lineTo(px-m,py+m); ctx.stroke();
       }
       // edge nodes — pulsing ring
-      const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 400);
+      const pulse = 0.85 + 0.15 * Math.sin(frameTick / 4);
       for (const [ex,ey] of [[3,10],[13,10],[24,10]] as Array<[number,number]>) {
         const [px,py] = xy([ex,ey]);
         ctx.strokeStyle = 'rgba(79,198,192,0.7)'; ctx.lineWidth = 1.5;
@@ -331,12 +332,11 @@ export function SimCanvas({
       }
     }
 
-    // v2: Selective comm flash — only robots that recently broadcast (comm_events > 0)
-    // show a brief cyan ring pulse; baseline mode shows all links always-on (greyed)
+    // v2: Selective comm flash for recently broadcast state; baseline shows full-rate links.
     if (frame.p2p_online) {
       const isBaseline = !frame.infra_online || frame.robots.every(r => (r.comm_events ?? 0) > frame.tick * 0.8);
       if (isBaseline) {
-        // Baseline: always-on greyed comm links
+        // Baseline: full-rate greyed comm links
         ctx.strokeStyle = 'rgba(90,102,96,0.18)';
         ctx.lineWidth = 0.8;
         ctx.setLineDash([3, 6]);
@@ -353,7 +353,7 @@ export function SimCanvas({
         // HARMONI: brief cyan flash ring for robots that just broadcast
         for (const r of frame.robots) {
           if (!r.active || !r.comm_events) continue;
-          if (Math.random() < 0.2) { // stochastic flash at current tick
+          if ((frameTick + r.id + (r.comm_events ?? 0)) % 5 === 0) {
             const [px, py] = xy(r.pos);
             ctx.strokeStyle = 'rgba(79,198,192,0.55)';
             ctx.lineWidth = 1.5; ctx.globalAlpha = 0.6;
@@ -370,7 +370,7 @@ export function SimCanvas({
       ctx.font = '10px monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText('⚠️ P2P / MANET OFFLINE', 18, 22);
+      ctx.fillText('P2P COORDINATION OFFLINE', 18, 22);
     }
 
     // Robot planned paths

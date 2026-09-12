@@ -13,6 +13,8 @@
 
 import type { Pos } from './types';
 import { Warehouse } from './warehouse';
+import type { PriorityClaim, ResourcePhase } from './coordination';
+import { claimWins } from './coordination';
 
 export type ReservationMode = 'harmoni' | 'baseline';
 
@@ -27,6 +29,13 @@ export class ReservationTable {
   private edgeRes: Map<string, number> = new Map();
   /** posKey -> [robot_id, release_tick]  [baseline mode only] */
   private intersectionLock: Map<string, [number, number]> = new Map();
+  /** resource_id -> deterministic lease owner */
+  private resourceLeases: Map<string, {
+    owner: number;
+    phase: ResourcePhase;
+    leaseUntil: number;
+    claim: PriorityClaim;
+  }> = new Map();
 
   constructor(mode: ReservationMode = 'harmoni', horizon = 3, intersectionDwell = 3) {
     this.mode = mode;
@@ -44,6 +53,92 @@ export class ReservationTable {
 
   private priorityWins(aId: number, bId: number): boolean {
     return aId < bId; // lower id = higher priority (deterministic)
+  }
+
+  requestResource(resourceId: string, claim: PriorityClaim, tick: number, leaseTicks = 5): {
+    granted: boolean;
+    owner: number | null;
+    phase: ResourcePhase;
+    reason: string;
+  } {
+    const current = this.resourceLeases.get(resourceId);
+    if (current && tick > current.leaseUntil) {
+      this.resourceLeases.delete(resourceId);
+    }
+
+    const lease = this.resourceLeases.get(resourceId);
+    if (lease) {
+      if (lease.owner === claim.robotId) {
+        lease.leaseUntil = tick + leaseTicks;
+        lease.claim = claim;
+        if (lease.phase === 'REQUEST') lease.phase = 'GRANT';
+        return { granted: true, owner: claim.robotId, phase: lease.phase, reason: 'lease renewed by owner' };
+      }
+      if (claimWins(claim, lease.claim) && lease.phase === 'REQUEST') {
+        this.resourceLeases.set(resourceId, {
+          owner: claim.robotId,
+          phase: 'GRANT',
+          leaseUntil: tick + leaseTicks,
+          claim,
+        });
+        return { granted: true, owner: claim.robotId, phase: 'GRANT', reason: 'higher priority request won before commit' };
+      }
+      return { granted: false, owner: lease.owner, phase: lease.phase, reason: 'resource owned by committed/priority peer' };
+    }
+
+    this.resourceLeases.set(resourceId, {
+      owner: claim.robotId,
+      phase: 'GRANT',
+      leaseUntil: tick + leaseTicks,
+      claim,
+    });
+    return { granted: true, owner: claim.robotId, phase: 'GRANT', reason: 'resource granted' };
+  }
+
+  commitResource(resourceId: string, robotId: number, tick: number, leaseTicks = 5): boolean {
+    const lease = this.resourceLeases.get(resourceId);
+    if (!lease || lease.owner !== robotId || tick > lease.leaseUntil) return false;
+    lease.phase = 'COMMIT';
+    lease.leaseUntil = tick + leaseTicks;
+    return true;
+  }
+
+  markCrossing(resourceId: string, robotId: number, tick: number, leaseTicks = 3): boolean {
+    const lease = this.resourceLeases.get(resourceId);
+    if (!lease || lease.owner !== robotId || tick > lease.leaseUntil) return false;
+    lease.phase = 'CROSS';
+    lease.leaseUntil = tick + leaseTicks;
+    return true;
+  }
+
+  releaseResource(resourceId: string, robotId: number): void {
+    const lease = this.resourceLeases.get(resourceId);
+    if (lease?.owner === robotId) this.resourceLeases.delete(resourceId);
+  }
+
+  ownerOfResource(resourceId: string, tick: number): number | null {
+    const lease = this.resourceLeases.get(resourceId);
+    if (!lease) return null;
+    if (tick > lease.leaseUntil) {
+      this.resourceLeases.delete(resourceId);
+      return null;
+    }
+    return lease.owner;
+  }
+
+  phaseOfResource(resourceId: string): ResourcePhase {
+    return this.resourceLeases.get(resourceId)?.phase ?? 'NONE';
+  }
+
+  purgeExpiredResources(tick: number): Array<{ resource_id: string; previous_holder: number }> {
+    const expired: Array<{ resource_id: string; previous_holder: number }> = [];
+    for (const [resourceId, lease] of this.resourceLeases) {
+      if (tick > lease.leaseUntil) {
+        expired.push({ resource_id: resourceId, previous_holder: lease.owner });
+        this.resourceLeases.delete(resourceId);
+      }
+    }
+    return expired;
   }
 
   request(robotId: number, node: Pos, fromNode: Pos | null, tick: number): boolean {
@@ -129,6 +224,9 @@ export class ReservationTable {
     for (const [k, [rid]] of this.intersectionLock) {
       if (rid === robotId) this.intersectionLock.delete(k);
     }
+    for (const [k, lease] of this.resourceLeases) {
+      if (lease.owner === robotId) this.resourceLeases.delete(k);
+    }
   }
 
   holderOf(node: Pos, tick: number): number | undefined {
@@ -149,5 +247,6 @@ export class ReservationTable {
     this.nodeRes.clear();
     this.edgeRes.clear();
     this.intersectionLock.clear();
+    this.resourceLeases.clear();
   }
 }

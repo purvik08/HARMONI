@@ -18,34 +18,34 @@ export function StatusPanel({ frame, tick, mode }: StatusPanelProps) {
 
   // Derive logical operating mode
   let opMode: { label: string; color: string; desc: string } = {
-    label: 'HARMONI (Full P2P + WMS)',
+    label: 'INFRASTRUCTURE-CONNECTED',
     color: 'text-[#4fc6c0] border-[#4fc6c0]/40 bg-[#4fc6c0]/10',
-    desc: 'Normal decentralized operation with central WMS feed online',
+    desc: 'WMS feed is available; local robot autonomy and deterministic safety remain authoritative',
   };
 
   if (mode === 'baseline') {
     opMode = {
-      label: 'BASELINE (Stop-and-Wait Mutex)',
+      label: 'BASELINE (Stop-and-Wait)',
       color: 'text-[#e0a63a] border-[#e0a63a]/40 bg-[#e0a63a]/10',
-      desc: 'Naive intersection mutex, no lookahead reservations',
+      desc: 'Simple comparison strategy with full-rate beacons and conservative waiting',
     };
   } else if (!infraOnline && p2pOnline) {
     opMode = {
-      label: 'P2P DISTRIBUTED MODE',
+      label: 'LOCAL/P2P DISTRIBUTED MODE',
       color: 'text-[#5fbf7a] border-[#5fbf7a]/40 bg-[#5fbf7a]/10',
-      desc: 'WMS offline: robots coordinate autonomously via P2P bus',
+      desc: 'Infrastructure is unavailable; robots use relevant-neighbor coordination where messages are fresh',
     };
   } else if (!infraOnline && !p2pOnline) {
     opMode = {
       label: 'ISOLATED LOCAL AUTONOMY',
       color: 'text-[#e3595a] border-[#e3595a]/40 bg-[#e3595a]/10',
-      desc: 'All comms lost: robots operate strictly on onboard sensing',
+      desc: 'Digital coordination is unavailable; local perception and conservative safety dominate',
     };
   } else if (hasFailedRobot) {
     opMode = {
-      label: 'DEGRADED FLEET (Safe Mode)',
+      label: 'DEGRADED FLEET',
       color: 'text-[#9a86e0] border-[#9a86e0]/40 bg-[#9a86e0]/10',
-      desc: 'One or more robots offline; tasks dynamically re-leased',
+      desc: 'One or more robots are offline; stale state and task leases expire before reassignment',
     };
   }
 
@@ -119,34 +119,34 @@ export function StatusPanel({ frame, tick, mode }: StatusPanelProps) {
         <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
           <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Deadlock Recovery</div>
           {mode === 'harmoni' ? (
-            <div className="text-[11px] font-bold text-[#2ecc71]">ACTIVE ✓ (Cycle Escape)</div>
+            <div className="text-[11px] font-bold text-[#2ecc71]">ACTIVE (Wait-for cycle recovery)</div>
           ) : (
-            <div className="text-[11px] font-bold text-[#e3595a]">NONE ✗ (Stalls Forever)</div>
+            <div className="text-[11px] font-bold text-[#e3595a]">NONE (comparison baseline)</div>
           )}
         </div>
         {/* Comm Strategy */}
         <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
           <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Comm Strategy</div>
           {mode === 'harmoni' ? (
-            <div className="text-[11px] font-bold text-[#4fc6c0]">SELECTIVE (Horizon 4)</div>
+            <div className="text-[11px] font-bold text-[#4fc6c0]">RELEVANT-NEIGHBOR (TTL)</div>
           ) : (
-            <div className="text-[11px] font-bold text-[#5a6660]">BROADCAST (Always-On)</div>
+            <div className="text-[11px] font-bold text-[#5a6660]">FULL-RATE BEACON</div>
           )}
         </div>
         {/* Local Autonomy */}
         <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
           <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Local Autonomy</div>
           {mode === 'harmoni' ? (
-            <div className="text-[11px] font-bold text-[#4fc6c0]">ACTIVE (Edge Nodes)</div>
+            <div className="text-[11px] font-bold text-[#4fc6c0]">ACTIVE (local autonomy)</div>
           ) : (
-            <div className="text-[11px] font-bold text-[#5a6660]">NONE (Central Ctrl)</div>
+            <div className="text-[11px] font-bold text-[#5a6660]">CONSERVATIVE WAITING</div>
           )}
         </div>
         {/* Edge Infrastructure */}
         <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-2.5">
           <div className="text-[10px] font-mono uppercase text-[#7d918a] mb-1">Edge Infrastructure</div>
           <div className={`text-[11px] font-bold ${infraOnline ? 'text-[#2ecc71]' : 'text-[#e3595a]'}`}>
-            {infraOnline ? 'ONLINE ✓' : 'OFFLINE ✗'}
+            {infraOnline ? 'ONLINE' : 'OFFLINE'}
           </div>
         </div>
       </div>

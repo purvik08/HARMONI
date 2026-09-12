@@ -25,7 +25,7 @@ export function RobotRoster({ frame, onSelectRobot }: RobotRosterProps) {
           Autonomous Mobile Robots (AMR Roster)
         </h3>
         <span className="text-[10px] font-mono text-[#7d918a]">
-          Priority = Robot ID (lower wins)
+          Safety &gt; Owner &gt; Urgency &gt; Wait &gt; Progress &gt; ID
         </span>
       </div>
 
@@ -65,6 +65,16 @@ export function RobotRoster({ frame, onSelectRobot }: RobotRosterProps) {
                 </span>
                 {isWaiting && r.waiting_on !== null && (
                   <span className="text-[#e0a63a]">waits on #{r.waiting_on}</span>
+                )}
+                <span className="text-[#4fc6c0]">{r.hierarchy_level ?? 'MISSION'}:{r.decision ?? r.state}</span>
+                {r.requested_resource && (
+                  <span className="text-[#dfe8e3]">req {r.requested_resource}</span>
+                )}
+                {r.owned_resource && (
+                  <span className="text-[#5fbf7a]">own {r.resource_phase}:{r.owned_resource}</span>
+                )}
+                {r.decision_locked && (
+                  <span className="text-[#9a86e0]">locked t{r.committed_until ?? '-'}</span>
                 )}
               </div>
 

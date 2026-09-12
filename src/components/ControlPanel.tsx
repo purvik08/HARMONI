@@ -137,14 +137,14 @@ export function ControlPanel({
               onClick={onTriggerInfraFailure}
               className="px-2.5 py-1.5 bg-[#0f1513] hover:bg-[#251717] border border-[#e3595a]/40 text-[#e3595a] rounded text-xs font-mono transition text-left"
             >
-              ⚡ Cut WMS Wi-Fi
+              Drop WMS Link
             </button>
           ) : (
             <button
               onClick={onRestoreInfra}
               className="px-2.5 py-1.5 bg-[#5fbf7a]/10 hover:bg-[#5fbf7a]/20 border border-[#5fbf7a] text-[#5fbf7a] rounded text-xs font-mono transition text-left font-bold"
             >
-              ✓ Restore WMS Link
+              Restore WMS Link
             </button>
           )}
 
@@ -154,14 +154,14 @@ export function ControlPanel({
               onClick={onTriggerP2pFailure}
               className="px-2.5 py-1.5 bg-[#0f1513] hover:bg-[#251717] border border-[#e3595a]/40 text-[#e3595a] rounded text-xs font-mono transition text-left"
             >
-              ⚡ Sever P2P Mesh
+              Drop P2P Link
             </button>
           ) : (
             <button
               onClick={onRestoreP2p}
               className="px-2.5 py-1.5 bg-[#4fc6c0]/10 hover:bg-[#4fc6c0]/20 border border-[#4fc6c0] text-[#4fc6c0] rounded text-xs font-mono transition text-left font-bold"
             >
-              ✓ Restore P2P Mesh
+              Restore P2P Link
             </button>
           )}
 

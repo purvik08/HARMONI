@@ -12,12 +12,25 @@ export interface WarehouseConfig {
   height: number;
 }
 
+export type OpticalSignal = 'normal_green' | 'intent_cyan' | 'conflict_amber' | 'failed_red';
+export type RobotLifecycleState =
+  | 'idle'
+  | 'planning'
+  | 'requesting'
+  | 'granted'
+  | 'committed'
+  | 'crossing'
+  | 'moving'
+  | 'waiting'
+  | 'blocked'
+  | 'failed';
+
 /** A single robot state snapshot (per frame) */
 export interface RobotState {
   id: number;
   pos: Pos;
   path: Pos[];
-  state: 'idle' | 'moving' | 'waiting' | 'failed';
+  state: RobotLifecycleState;
   task_id: number | null;
   battery: number;
   active: boolean;
@@ -26,6 +39,21 @@ export interface RobotState {
   heading?: number;
   /** v2: number of P2P broadcasts this robot has made */
   comm_events?: number;
+  /** Estimated bytes sent over P2P/infra */
+  comm_bytes?: number;
+  /** Warehouse spatial zone */
+  zone?: 'A' | 'B' | 'C';
+  /** Optical status LED indicator */
+  optical_signal?: OpticalSignal;
+  decision?: string;
+  hierarchy_level?: string;
+  requested_resource?: string | null;
+  owned_resource?: string | null;
+  resource_phase?: string;
+  reason?: string;
+  committed_until?: number | null;
+  decision_locked?: boolean;
+  priority_key?: string;
 }
 
 /** A single simulation event */
@@ -63,7 +91,10 @@ export interface SimEvent {
   robots?: number[];
   previous_holder?: number;
   bid?: number;
+  resource_id?: string;
 }
+
+import type { ConflictEdge } from './conflictGraph';
 
 /** One tick's complete snapshot */
 export interface SimFrame {
@@ -77,6 +108,10 @@ export interface SimFrame {
   reservations?: Array<{ node: Pos; robot_id: number }>;
   /** tasks currently in the pool */
   tasks?: TaskSnapshot[];
+  /** Dynamic trajectory conflict edges active this tick */
+  conflict_edges?: ConflictEdge[];
+  /** Edge AI zone congestion levels */
+  congestion?: { zoneA: number; zoneB: number; zoneC: number };
 }
 
 export interface TaskSnapshot {

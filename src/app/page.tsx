@@ -10,6 +10,8 @@ import { EventFeed } from '../components/EventFeed';
 import { MetricsPanel } from '../components/MetricsPanel';
 import { BenchmarkPanel } from '../components/BenchmarkPanel';
 import { ScenarioTabs } from '../components/ScenarioTabs';
+import { EdgeAIPanel } from '../components/EdgeAIPanel';
+import { DocsAlignmentPanel } from '../components/DocsAlignmentPanel';
 import type { RobotState } from '../sim/types';
 
 export default function HomePage() {
@@ -77,8 +79,8 @@ export default function HomePage() {
     }
   };
 
-  const gridW = activeScenario === '4_deadlock' ? 0 : 28;
-  const gridH = activeScenario === '4_deadlock' ? 0 : 20;
+  const gridW = activeScenario === '3_deadlock' ? 0 : 28;
+  const gridH = activeScenario === '3_deadlock' ? 0 : 20;
 
   return (
     <main className="max-w-7xl mx-auto p-3 sm:p-5 flex flex-col gap-4">
@@ -91,7 +93,7 @@ export default function HomePage() {
               HARMONI <span className="text-[#4fc6c0] text-sm font-normal">v2</span>
             </h1>
             <p className="text-xs text-[#7d918a]">
-              Parallel Digital Twin • HARMONI (Distributed) vs STANDARD (Stop-and-Wait Baseline)
+              Repeatable browser digital twin for decentralized AMR coordination and validation
             </p>
           </div>
         </div>
@@ -101,7 +103,7 @@ export default function HomePage() {
             SIH26123
           </span>
           <span className="px-2 py-0.5 rounded bg-[#4fc6c0]/15 border border-[#4fc6c0]/30 text-[#4fc6c0] font-bold">
-            28×20 Grid • Parallel Twin
+            28x20 Grid / Parallel Twin
           </span>
         </div>
       </header>
@@ -119,6 +121,12 @@ export default function HomePage() {
       {/* Operating Status Panel */}
       <StatusPanel frame={frameHarmoni} tick={frameHarmoni?.tick} mode={mode} />
 
+      <DocsAlignmentPanel
+        frame={frameHarmoni}
+        metricsHarmoni={metricsHarmoni}
+        metricsBaseline={metricsBaseline}
+      />
+
       {/* Side-by-Side Split Screen Canvas View */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {/* LEFT PANE: HARMONI Distributed */}
@@ -127,12 +135,12 @@ export default function HomePage() {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#4fc6c0] shadow-[0_0_8px_#4fc6c0] animate-pulse" />
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#4fc6c0]">
-                HARMONI • Distributed Fleet
+                HARMONI / Distributed Fleet
               </h2>
             </div>
             <div className="flex items-center gap-2 font-mono text-[10px]">
               <span className="px-2 py-0.5 rounded bg-[#4fc6c0]/20 text-[#4fc6c0] font-bold border border-[#4fc6c0]/40">
-                Space-Time Res. + Selective P2P
+                Local Reservations + Relevant P2P
               </span>
               <span className="text-[#dfe8e3] bg-[#0f1513] px-1.5 py-0.5 rounded border border-[#22302b]">
                 Tick {frameHarmoni?.tick ?? 0}
@@ -163,7 +171,7 @@ export default function HomePage() {
             <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
               <span className="text-[9px] text-[#7d918a]">Deadlocks</span>
               <span className="text-sm font-bold text-[#2ecc71]">
-                {metricsHarmoni?.deadlocks_resolved ?? 0} RESOLVED ✓
+                {metricsHarmoni?.deadlocks_resolved ?? 0} resolved
               </span>
             </div>
             <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
@@ -181,12 +189,12 @@ export default function HomePage() {
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#e0a63a]" />
               <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#a0a8a4]">
-                STANDARD • Stop-and-Wait Mutex
+                Stop-and-Wait Baseline
               </h2>
             </div>
             <div className="flex items-center gap-2 font-mono text-[10px]">
               <span className="px-2 py-0.5 rounded bg-[#5a6660]/30 text-[#dfe8e3] font-bold border border-[#5a6660]/50">
-                Centralized Mutex + Beacon
+                Stop-and-Wait + Full Beacon
               </span>
               <span className="text-[#dfe8e3] bg-[#0f1513] px-1.5 py-0.5 rounded border border-[#22302b]">
                 Tick {frameBaseline?.tick ?? 0}
@@ -217,7 +225,7 @@ export default function HomePage() {
             <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
               <span className="text-[9px] text-[#7d918a]">Deadlocks</span>
               <span className="text-sm font-bold text-[#e3595a]">
-                {(metricsBaseline?.deadlocks_detected ?? 0) > 0 ? 'STALLED ✗' : '0'}
+                {metricsBaseline?.deadlocks_detected ?? 0}
               </span>
             </div>
             <div className="bg-[#0f1513] p-1.5 rounded border border-[#22302b] flex flex-col">
@@ -260,6 +268,8 @@ export default function HomePage() {
         metricsHarmoni={metricsHarmoni}
         metricsBaseline={metricsBaseline}
       />
+
+      <EdgeAIPanel frame={frameHarmoni} />
 
       {/* Bottom Row: Robot Roster & Event Feed */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -311,7 +321,7 @@ export default function HomePage() {
               <div>
                 <span className="text-[#7d918a]">Priority Rank:</span>
                 <div className="text-[#dfe8e3]">
-                  Level {inspectedRobot.id} (Deterministic ID)
+                  {inspectedRobot.priority_key ?? `id:${inspectedRobot.id}`}
                 </div>
               </div>
 
@@ -333,6 +343,57 @@ export default function HomePage() {
                   {inspectedRobot.waiting_on !== null
                     ? `AMR #${inspectedRobot.waiting_on}`
                     : 'Clear'}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-[#22302b]">
+              <div>
+                <span className="text-[#7d918a]">Hierarchy:</span>
+                <div className="text-[#4fc6c0] font-bold">
+                  {inspectedRobot.hierarchy_level ?? 'MISSION'}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[#7d918a]">Decision:</span>
+                <div className="text-[#dfe8e3] font-bold">
+                  {inspectedRobot.decision ?? inspectedRobot.state}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[#7d918a]">Requested Resource:</span>
+                <div className="text-[#dfe8e3] break-all">
+                  {inspectedRobot.requested_resource ?? 'None'}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[#7d918a]">Owned Resource:</span>
+                <div className="text-[#5fbf7a] break-all">
+                  {inspectedRobot.owned_resource ?? 'None'}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[#7d918a]">Phase:</span>
+                <div className="text-[#dfe8e3]">
+                  {inspectedRobot.resource_phase ?? 'NONE'}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[#7d918a]">Lock:</span>
+                <div className="text-[#9a86e0]">
+                  {inspectedRobot.decision_locked ? `LOCKED until t${inspectedRobot.committed_until ?? '-'}` : 'Open'}
+                </div>
+              </div>
+
+              <div className="col-span-2">
+                <span className="text-[#7d918a]">Reason:</span>
+                <div className="text-[#dfe8e3]">
+                  {inspectedRobot.reason ?? 'No decision recorded'}
                 </div>
               </div>
             </div>
@@ -359,7 +420,7 @@ export default function HomePage() {
       {/* Architecture Footer */}
       <footer className="mt-4 pt-4 border-t border-[#22302b] text-[11px] text-[#7d918a] leading-relaxed flex flex-col gap-2 font-mono">
         <div>
-          <b className="text-[#dfe8e3]">HARMONI vs Standard Baseline:</b> HARMONI operates on localized space-time reservations, selective P2P coordination, and decentralized cycle recovery. Standard baseline uses centralized mutex locks, full-rate beacons, and has no cycle escape mechanisms.
+          <b className="text-[#dfe8e3]">HARMONI vs Stop-and-Wait:</b> HARMONI emulates localized space-time reservations, selective P2P coordination, task leases, and decentralized cycle recovery. The baseline is an intentionally simple stop-and-wait comparison used for repeatable measurement, not a production fleet controller.
         </div>
       </footer>
     </main>

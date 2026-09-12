@@ -1,16 +1,12 @@
 /**
  * Network abstraction layer.
  *
- * This is an explicit SOFTWARE EMULATION of a decentralized pub/sub bus
- * (the role Eclipse Zenoh plays in the real system), not a claim of real
- * wireless MANET behavior. It models two independent layers:
- *
- *   INFRA / WMS layer  - optional. Issues new high-level tasks, provides
- *                         a global log / dashboard feed. Can go offline.
- *   P2P layer          - robot-to-robot pub/sub of compact state + intent
- *                         + obstacle-event messages.
- *
- * Direct port of network.py — identical logic.
+ * Implements communication architecture per Docs/04_COMMUNICATION_ARCHITECTURE.md:
+ * - Software emulation of decentralized pub/sub bus (Eclipse Zenoh model).
+ * - Dual layer: Optional Infrastructure / WMS + Local P2P Mesh.
+ * - Stale-state handling: Messages include timestamp, TTL, and confidence.
+ * - Stale state automatically purged; never treated as current ground truth.
+ * - Network telemetry: tracks message counts and byte transfers per robot.
  */
 
 import type { Pos, SimEvent } from './types';
@@ -27,12 +23,18 @@ export interface StateMsg {
   task_id: number | null;
   battery: number;
   state: string;
+  // Freshness metadata
+  timestamp: number;
+  ttl: number; // ticks before state expires
+  confidence: number; // 0.0 to 1.0
+  zone?: 'A' | 'B' | 'C';
 }
 
 export interface ObstacleEvent {
   tick: number;
   type: 'blocked' | 'cleared';
   edge: [Pos, Pos];
+  ttl: number;
 }
 
 export class NetworkBus {
@@ -44,6 +46,10 @@ export class NetworkBus {
   private _obstacleEvents: ObstacleEvent[] = [];
   private _taskPoolMsgs: SimEvent[] = [];
 
+  // Network Telemetry
+  totalMessagesSent = 0;
+  totalBytesTransferred = 0;
+
   constructor(infraOnline = true, p2pOnline = true, commRange = 100) {
     this.infraOnline = infraOnline;
     this.p2pOnline = p2pOnline;
@@ -54,12 +60,17 @@ export class NetworkBus {
   publishState(robotId: number, msg: StateMsg): void {
     if (!this.p2pOnline) return;
     this._stateMsgs.set(robotId, msg);
+    this.totalMessagesSent++;
+    // Compact JSON wire size estimate: ~64 bytes per state broadcast
+    this.totalBytesTransferred += 64;
   }
 
   publishObstacleEvent(event: ObstacleEvent): void {
     if (!this.p2pOnline) return;
     this._obstacleEvents.push(event);
-    // keep bounded (mirrors Python's [-200:])
+    this.totalMessagesSent++;
+    this.totalBytesTransferred += 48;
+
     if (this._obstacleEvents.length > 200) {
       this._obstacleEvents = this._obstacleEvents.slice(-200);
     }
@@ -67,10 +78,26 @@ export class NetworkBus {
 
   publishTaskEvent(event: SimEvent): void {
     this._taskPoolMsgs.push(event);
+    this.totalMessagesSent++;
+    this.totalBytesTransferred += 56;
   }
 
   removeState(robotId: number): void {
     this._stateMsgs.delete(robotId);
+  }
+
+  /**
+   * Purges expired robot state messages whose TTL has elapsed.
+   */
+  purgeStale(currentTick: number): number[] {
+    const stale: number[] = [];
+    for (const [id, msg] of this._stateMsgs) {
+      if (currentTick - msg.timestamp > msg.ttl) {
+        this._stateMsgs.delete(id);
+        stale.push(id);
+      }
+    }
+    return stale;
   }
 
   // --- subscribe ---
@@ -107,5 +134,7 @@ export class NetworkBus {
     this._taskPoolMsgs = [];
     this.infraOnline = true;
     this.p2pOnline = true;
+    this.totalMessagesSent = 0;
+    this.totalBytesTransferred = 0;
   }
 }

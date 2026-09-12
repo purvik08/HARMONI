@@ -89,8 +89,8 @@ export class Warehouse {
     const obstacles = new Set<string>();
     const edge_nodes = new Set<string>();
 
-    for (const p of [[1,1],[2,1],[3,1],[1,2],[2,2],[3,2]] as Pos[]) pickup.add(Warehouse.posKey(p));
-    for (const p of [[24,1],[25,1],[26,1],[24,2],[25,2],[26,2]] as Pos[]) dropoff.add(Warehouse.posKey(p));
+    for (const p of [[1,4],[2,4],[3,4],[1,5],[2,5],[3,5],[1,6],[2,6],[3,6]] as Pos[]) pickup.add(Warehouse.posKey(p));
+    for (const p of [[24,13],[25,13],[26,13],[24,14],[25,14],[26,14],[24,15],[25,15],[26,15]] as Pos[]) dropoff.add(Warehouse.posKey(p));
 
     for (let x = 6; x < 22; x++) for (let y = 4; y < 8; y++) racks.add(`${x},${y}`);
     for (let x = 6; x < 22; x++) for (let y = 12; y < 16; y++) racks.add(`${x},${y}`);
@@ -133,6 +133,13 @@ export class Warehouse {
   static dist(a: Pos, b: Pos): number { return Math.abs(a[0]-b[0]) + Math.abs(a[1]-b[1]); }
 
   // ─── Instance methods ────────────────────────────────────────────────────
+  getZone(pos: Pos): 'A' | 'B' | 'C' {
+    const x = pos[0];
+    if (x < 8) return 'A'; // Zone A: West / Pickup & Dock
+    if (x < 20) return 'B'; // Zone B: Central Racks & Main Intersections
+    return 'C'; // Zone C: East / Dropoff & Shipping
+  }
+
   neighbors(node: Pos): Pos[] {
     const key = Warehouse.posKey(node);
     const nbSet = this.edges.get(key);

@@ -79,7 +79,7 @@ export function MetricsPanel({ metrics, metricsHarmoni, metricsBaseline }: Metri
     <div className="bg-[#131a17] border border-[#22302b] rounded-lg p-3 flex flex-col gap-3">
       <div className="flex items-center justify-between border-b border-[#22302b] pb-2">
         <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#dfe8e3]">
-          Live Comparison: HARMONI (Distributed) vs STANDARD (Baseline)
+          Live Comparison: HARMONI vs Stop-and-Wait Baseline
         </h3>
         <span className="text-[10px] font-mono text-[#4fc6c0]">
           Parallel Real-Time Telemetry
@@ -90,8 +90,8 @@ export function MetricsPanel({ metrics, metricsHarmoni, metricsBaseline }: Metri
         {/* HARMONI Column */}
         <div className="flex flex-col gap-2 p-3 bg-[#0c1816] border border-[#4fc6c0]/40 rounded-lg">
           <div className="flex items-center justify-between text-xs font-mono font-bold text-[#4fc6c0]">
-            <span>▲ HARMONI FLEET</span>
-            <span className="text-[10px] text-[#5fbf7a] bg-[#5fbf7a]/15 px-1.5 py-0.5 rounded">High Throughput</span>
+            <span>HARMONI FLEET</span>
+            <span className="text-[10px] text-[#5fbf7a] bg-[#5fbf7a]/15 px-1.5 py-0.5 rounded">Measured Run</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-[#112320] p-2 rounded border border-[#4fc6c0]/30 flex flex-col">
@@ -116,7 +116,7 @@ export function MetricsPanel({ metrics, metricsHarmoni, metricsBaseline }: Metri
         {/* BASELINE Column */}
         <div className="flex flex-col gap-2 p-3 bg-[#171816] border border-[#5a6660]/50 rounded-lg">
           <div className="flex items-center justify-between text-xs font-mono font-bold text-[#a0a8a4]">
-            <span>▼ STANDARD BASELINE</span>
+            <span>STOP-AND-WAIT BASELINE</span>
             <span className="text-[10px] text-[#e3595a] bg-[#e3595a]/15 px-1.5 py-0.5 rounded">Stop-and-Wait</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -126,7 +126,7 @@ export function MetricsPanel({ metrics, metricsHarmoni, metricsBaseline }: Metri
             </div>
             <div className="bg-[#1d1f1c] p-2 rounded border border-[#5a6660]/30 flex flex-col">
               <span className="text-[9px] font-mono text-[#7d918a]">Deadlocks Res.</span>
-              <span className="text-base font-mono font-bold text-[#e3595a]">{b.deadlocks_resolved}/{b.deadlocks_detected} (Stalled)</span>
+              <span className="text-base font-mono font-bold text-[#e3595a]">{b.deadlocks_resolved}/{b.deadlocks_detected}</span>
             </div>
             <div className="bg-[#1d1f1c] p-2 rounded border border-[#5a6660]/30 flex flex-col">
               <span className="text-[9px] font-mono text-[#7d918a]">Total Wait Ticks</span>

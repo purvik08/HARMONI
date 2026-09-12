@@ -16,6 +16,8 @@ import { ReservationTable, type ReservationMode } from './reservation';
 import { TaskPool, Task, EdgeNode } from './tasks';
 import { Robot } from './robot';
 import { detectCycle, chooseRecoveryRobot } from './deadlock';
+import { ConflictGraph, type ConflictEdge } from './conflictGraph';
+import { EdgeAIPredictor, type ZoneCongestion } from './edgeAI';
 import type { Pos, SimEvent, SimFrame, SimMetrics, SimLog, TaskSnapshot } from './types';
 import { Warehouse as WH } from './warehouse';
 
@@ -52,6 +54,8 @@ export class Simulator {
   scenarioName: string;
   robots: Map<number, Robot>;
   edgeNodes: EdgeNode[]; // v2
+  conflictGraph: ConflictGraph;
+  edgeAI: EdgeAIPredictor;
   tick: number;
   frames: SimFrame[];
   metrics: SimMetrics;
@@ -66,6 +70,8 @@ export class Simulator {
     this.res = new ReservationTable(config.mode);
     this.logEvents = [];
     this.tasks = new TaskPool(this.bus, this.logEvents);
+    this.conflictGraph = new ConflictGraph(4);
+    this.edgeAI = new EdgeAIPredictor(30);
     this.rng = new SeededRng(config.seed);
     this.scenarioName = config.scenarioName;
     this.robots = new Map();
@@ -180,6 +186,26 @@ export class Simulator {
   _tickOnce(): void {
     const t = this.tick;
 
+    // 0. Purge stale peer heartbeats and expired resource leases.
+    const staleRobotIds = this.bus.purgeStale(t);
+    for (const robotId of staleRobotIds) {
+      const robot = this.robots.get(robotId);
+      if (!robot?.active) this.res.releaseAllFuture(robotId);
+    }
+    for (const expired of this.res.purgeExpiredResources(t)) {
+      this.logEvents.push({
+        tick: t,
+        type: 'lease_expired',
+        resource_id: expired.resource_id,
+        previous_holder: expired.previous_holder,
+      });
+    }
+
+    // Record passages for Edge AI congestion learning
+    for (const r of this.robots.values()) {
+      if (r.active) this.edgeAI.recordPassage(r.pos, t);
+    }
+
     // Continuous replenishment: ensure there are always pending orders available for AMRs
     if (this.tasks.pendingTasks().length < Math.max(6, this.robots.size * 2)) {
       this.addRandomTask();
@@ -267,7 +293,18 @@ export class Simulator {
     }
     this.metrics.replans = Array.from(this.robots.values()).reduce((s, r) => s + r.stats.replans, 0);
 
-    this._recordFrame(t, results);
+    // Compute dynamic conflict graph across active robot trajectories
+    const trajViews = Array.from(this.robots.values()).map(r => ({
+      id: r.id, pos: r.pos, path: r.path, active: r.active, state: r.state
+    }));
+    const conflicts = this.conflictGraph.computeConflicts(trajViews, t);
+
+    // Compute zone congestion via Edge AI
+    const activePositions = Array.from(this.robots.values()).filter(r => r.active).map(r => r.pos);
+    const congestionScores = this.edgeAI.getIntersectionCongestion(this.wh.getIntersections(), t, activePositions);
+    const zoneCongestion = this.edgeAI.getZoneCongestion(congestionScores);
+
+    this._recordFrame(t, results, conflicts, zoneCongestion);
   }
 
   private _safetyCheck(results: Map<number, ReturnType<Robot['step']>>, t: number): void {
@@ -372,7 +409,12 @@ export class Simulator {
   }
 
   // -------------------- dashboard export --------------------
-  private _recordFrame(t: number, results: Map<number, ReturnType<Robot['step']>>): void {
+  private _recordFrame(
+    t: number,
+    results: Map<number, ReturnType<Robot['step']>>,
+    conflicts?: ConflictEdge[],
+    zoneCongestion?: ZoneCongestion
+  ): void {
     const frame: SimFrame = {
       tick: t,
       infra_online: this.bus.infraOnline,
@@ -382,6 +424,8 @@ export class Simulator {
       events_this_tick: this.logEvents.filter(e => e.tick === t),
       reservations: this.res.getAllReservations(),
       tasks: this.tasks.getSnapshots(),
+      conflict_edges: conflicts,
+      congestion: zoneCongestion,
     };
     for (const r of this.robots.values()) {
       frame.robots.push({
@@ -395,6 +439,18 @@ export class Simulator {
         waiting_on: r.waiting_on,
         heading: r.heading,
         comm_events: r.stats.comm_events, // v2
+        comm_bytes: r.stats.comm_events * 64,
+        zone: this.wh.getZone(r.pos),
+        optical_signal: r.getOpticalSignal(),
+        decision: r.decisionDebug.decision,
+        hierarchy_level: r.decisionDebug.hierarchy_level,
+        requested_resource: r.decisionDebug.requested_resource,
+        owned_resource: r.decisionDebug.owned_resource,
+        resource_phase: r.decisionDebug.resource_phase,
+        reason: r.decisionDebug.reason,
+        committed_until: r.decisionDebug.committed_until,
+        decision_locked: r.decisionDebug.locked,
+        priority_key: r.decisionDebug.priority_key,
       });
     }
     this.frames.push(frame);
@@ -437,9 +493,9 @@ export class Simulator {
     const positions = Array.from(this.robots.values()).map(r => Warehouse.posKey(r.pos));
     const free = this.wh.nodes.filter(n => !positions.includes(Warehouse.posKey(n)));
     if (free.length === 0) return -1;
-    const pos = free[Math.floor(Math.random() * free.length)];
+    const pos = free[0];
     const id = this.nextRobotId++;
-    const r = new Robot(id, pos, this.wh, this.bus, this.res, this.logEvents);
+    const r = new Robot(id, pos, this.wh, this.bus, this.res, this.logEvents, this.mode);
     this.robots.set(id, r);
     return id;
   }
@@ -454,12 +510,12 @@ export class Simulator {
 
   blockAisle(a: Pos, b: Pos): void {
     this.wh.blockEdge(a, b);
-    this.bus.publishObstacleEvent({ tick: this.tick, type: 'blocked', edge: [a, b] });
+    this.bus.publishObstacleEvent({ tick: this.tick, type: 'blocked', edge: [a, b], ttl: 60 });
   }
 
   unblockAisle(a: Pos, b: Pos): void {
     this.wh.unblockEdge(a, b);
-    this.bus.publishObstacleEvent({ tick: this.tick, type: 'cleared', edge: [a, b] });
+    this.bus.publishObstacleEvent({ tick: this.tick, type: 'cleared', edge: [a, b], ttl: 60 });
   }
 
   triggerDeadlock(): void {
